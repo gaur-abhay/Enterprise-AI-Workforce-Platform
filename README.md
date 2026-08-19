@@ -19,7 +19,7 @@ Build walkthrough and rationale: [`IMPLEMENTATION.md`](docs/IMPLEMENTATION.md).
 | 2 | Ingestion pipeline (chunk → embed → index) | Built, partially verified |
 | 3 | `search_documents` tool | Built, partially verified |
 | 4 | LangGraph agent (agent node → tool node → loop) | Built, partially verified |
-| 5 | FastAPI `/chat` endpoint | Not started |
+| 5 | FastAPI `/chat` endpoint | Built, partially verified |
 | 6 | End-to-end smoke test | Not started |
 
 ## Prerequisites
@@ -57,8 +57,32 @@ The uv environment is kept outside the repository at `/home/<user>/.virtualenvs/
 | `DATABASE_URL` | PostgreSQL connection string used by the application |
 | `POSTGRES_USER` / `POSTGRES_PASSWORD` / `POSTGRES_DB` | Compose service credentials |
 | `POSTGRES_PORT` / `OLLAMA_PORT` | Host port mappings, override on conflict |
-| `OLLAMA_BASE_URL` / `EMBEDDING_MODEL` / `EMBEDDING_DIM` | Embedding service and model |
-| `AZURE_OPENAI_*` | LLM endpoint, key, deployment, and API version |
+| `LLM_PROVIDER` | `azure_openai` or `gemini` |
+| `EMBEDDING_PROVIDER` | `ollama` or `gemini` |
+| `EMBEDDING_DIM` | Vector width; must match the active embedding model |
+| `OLLAMA_BASE_URL` / `EMBEDDING_MODEL` | Local embedding service and model |
+| `AZURE_OPENAI_*` | Endpoint, key, deployment, and API version |
+| `GOOGLE_API_KEY` / `GEMINI_*` | Gemini key and model names |
+
+### Providers
+
+The chat model and the embedding model are chosen independently, so a free Gemini key is
+enough to run the whole system without Azure or a local Ollama:
+
+```bash
+LLM_PROVIDER=gemini
+EMBEDDING_PROVIDER=gemini
+GOOGLE_API_KEY=...
+```
+
+Get a key at [aistudio.google.com/apikey](https://aistudio.google.com/apikey).
+
+Switching the *embedding* provider requires re-indexing, because vectors from different
+models are not comparable — this is true of every vector store, not just this one. Every
+chunk records the model that produced it and retrieval only searches chunks matching the
+active model, so a switch returns no results rather than wrong ones. Run `make ingest` after
+switching: documents already indexed under a different model are re-embedded automatically,
+without needing `--force`.
 
 ## Project structure
 
@@ -85,6 +109,34 @@ The uv environment is kept outside the repository at `/home/<user>/.virtualenvs/
 | `make logs` | Follow container logs |
 | `make api` | Run the FastAPI app with reload |
 | `make ingest` | Run the ingestion pipeline |
+
+## Usage
+
+Index documents placed in `data/documents/`:
+
+```bash
+make ingest                                              # or: --force to re-index
+```
+
+Ask a question from the command line:
+
+```bash
+uv run python -m ai_employee.agent.runner "what is the home office stipend?" --show-tools
+```
+
+Or over HTTP:
+
+```bash
+make api
+curl -s localhost:8000/health
+
+curl -s localhost:8000/chat -H 'content-type: application/json' \
+  -d '{"message": "what is the home office stipend?"}'
+```
+
+`/chat` returns `answer`, a `thread_id`, the `sources` the model was shown, and the
+`tool_calls` it made. Pass the `thread_id` back to continue the same conversation; omit it to
+start a new one. Interactive docs are at `/docs`.
 
 ---
 

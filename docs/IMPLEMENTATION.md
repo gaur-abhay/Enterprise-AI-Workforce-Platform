@@ -13,7 +13,7 @@ looks the way it does.
 | 2 | Ingestion pipeline: load → chunk → embed → store | Built, partially verified |
 | 3 | `search_documents` tool | Built, partially verified |
 | 4 | LangGraph agent | Built, partially verified |
-| 5 | FastAPI `/chat` endpoint | Not started |
+| 5 | FastAPI `/chat` endpoint | Built, partially verified |
 | 6 | End-to-end smoke test | Not started |
 
 ---
@@ -431,3 +431,182 @@ Unverified: every real Azure OpenAI call. No request has been made, so the deplo
 API version, and tool-calling behaviour of the actual model are all untested — as is whether
 the prompt produces the citation discipline it asks for, which needs real documents and real
 retrieval to judge.
+
+---
+
+## Step 5 — FastAPI `/chat`
+
+The HTTP surface. Two endpoints, no auth yet.
+
+| Method | Path | Purpose |
+|---|---|---|
+| `POST` | `/chat` | One conversational turn |
+| `GET` | `/health` | Per-dependency readiness |
+
+```mermaid
+flowchart LR
+    REQ["POST /chat<br/>message, thread_id?"] --> VAL{"pydantic<br/>1-4000 chars"}
+    VAL -->|"invalid"| E422(["422"])
+    VAL -->|"valid"| TID["thread_id<br/>or new uuid4"]
+    TID --> ASK["runner.ask<br/>runs the graph"]
+    ASK --> SRC["_extract_sources<br/>parse ToolMessage JSON"]
+    SRC --> RESP["200<br/>answer, thread_id,<br/>sources, tool_calls"]
+
+    ASK -.->|"AgentNotConfiguredError"| E503(["503"])
+    ASK -.->|"anything else"| E500(["500"])
+```
+
+### Decisions
+
+**The endpoint is `def`, not `async def`.** `ask()` blocks on three things — the Azure call,
+Postgres, and Ollama — none of which are async in this codebase. Declaring it `async def`
+would run that blocking work directly on the event loop and stall every other request in the
+process. As a plain `def`, FastAPI dispatches it to a worker thread. This is a real
+constraint, not a style choice; making the path genuinely async means an async database
+driver and async embedding calls throughout.
+
+**`thread_id` is the entire conversation contract.** Omit it and the server mints a `uuid4`
+and returns it; pass it back to continue. There is no session, no cookie, and no server-side
+notion of a user — the client owns the identifier. That is deliberate at this stage, and it
+is also why there is no authorisation: anyone who knows a `thread_id` can continue that
+conversation.
+
+**`sources` is what the model was *shown*, not what it cited.** `_extract_sources` parses the
+`ToolMessage` JSON and dedupes by `chunk_id`. The model may cite a subset, or — if the prompt
+fails — none of them. The field is an audit trail answering "what grounded this turn?", which
+is what the compliance section of the master document asks for. Reading it as a citation list
+would overstate what it knows.
+
+**Errors are separated by cause.** Missing Azure configuration returns `503` with the
+specific variables named, because that is an operator problem and retrying will not fix it.
+Anything else returns `500` with a generic message, while the traceback goes to the log —
+internal errors should not be echoed to callers. Pydantic handles `422` for a message that is
+empty or over 4000 characters.
+
+**`/health` reports each dependency separately** and returns `503` when any is down. A single
+boolean would say "unhealthy" without saying which of Postgres, Ollama, or the Azure config
+is the problem. The Ollama check also verifies the embedding model is actually pulled, since a
+running Ollama with no `nomic-embed-text` fails only later, at the first query.
+
+### Known wart
+
+`ai_employee.tools.search_documents` names both the module and the tool object re-exported
+from `tools/__init__.py`. `from ai_employee.tools import search_documents` gives the tool;
+`import ai_employee.tools.search_documents as X` gives the module. This is the ordinary
+LangChain layout and both import styles work, but it will bite anything that monkeypatches
+the module — as it did while testing this step, where `sys.modules[...]` was needed instead.
+
+### Verification status
+
+Exercised through `TestClient` with no containers and no Azure key:
+
+- `/health` returned `503` naming all three failures independently — `OperationalError` for
+  Postgres, `ConnectError` for Ollama, and the three missing Azure variables;
+- `/chat` returned `503` with the specific missing settings;
+- `422` for both an empty `message` and a missing one;
+- with a stub model and stubbed retrieval, `/chat` returned `200` carrying the answer, a
+  generated `thread_id`, two deduped sources with page and score, and the tool call with its
+  arguments;
+- passing a `thread_id` back returned the same one; omitting it produced a different one.
+
+Unverified: everything that needs the real dependencies — an actual Azure response, real
+retrieval, and the server running under uvicorn rather than `TestClient`.
+
+---
+
+## Cross-cutting — Provider abstraction
+
+Added after Step 5, so the system can run on a free Gemini key instead of Azure plus a local
+Ollama. This touched every layer, so it is recorded here rather than under a step.
+
+The chat model and the embedding model are selected **independently**, by `LLM_PROVIDER`
+(`azure_openai` | `gemini`) and `EMBEDDING_PROVIDER` (`ollama` | `gemini`). Local embeddings
+with a hosted chat model is a sensible combination and the design does not get in its way.
+
+```mermaid
+flowchart TD
+    CFG["config.Settings<br/>LLM_PROVIDER, EMBEDDING_PROVIDER"] --> LLMF["llm.get_chat_model"]
+    CFG --> EMBF["embeddings.get_provider"]
+
+    LLMF --> AZ["AzureChatOpenAI"]
+    LLMF --> GEM["ChatGoogleGenerativeAI"]
+
+    EMBF --> OLL["Ollama<br/>search_document: / search_query:"]
+    EMBF --> GEMB["Gemini<br/>task_type RETRIEVAL_DOCUMENT / RETRIEVAL_QUERY"]
+
+    AZ --> GRAPH["agent graph<br/>bind_tools"]
+    GEM --> GRAPH
+    OLL --> VEC["normalise, check dim, tag model_id"]
+    GEMB --> VEC
+    VEC --> PG[("chunks.embedding<br/>chunks.embedding_model")]
+```
+
+### Where the vendors live
+
+`llm.py` and `embeddings.py`. Nothing else in the codebase names a provider — `graph.py`
+calls `get_chat_model()`, `pipeline.py` and `retrieval.py` call `embed_*`. Each module holds
+a registry mapping a provider name to a builder plus its required settings, so adding a third
+provider is a builder function and one dictionary entry.
+
+Vendor SDKs are imported **inside** the builders rather than at module top level, so an
+unused provider's package never has to be importable at runtime.
+
+`AgentNotConfiguredError` is now an alias for the provider-neutral `LLMNotConfiguredError`,
+keeping the agent package's public name stable.
+
+### The part that is not just configuration
+
+Embeddings from two different models are **not comparable**. Cosine similarity between a
+nomic vector and a Gemini vector is a meaningless number that still sorts, which is the
+dangerous kind of wrong — retrieval would return confident nonsense rather than failing.
+
+Three things guard against it:
+
+1. **Every chunk records `embedding_model`** — `ollama:nomic-embed-text`,
+   `gemini:models/text-embedding-004` — as a column, indexed.
+2. **Retrieval filters on it.** `WHERE c.embedding_model = %(embedding_model)s` means a
+   switched provider sees zero results from chunks embedded by the previous model, rather
+   than garbage rankings. The failure mode is empty, which is honest.
+3. **The re-ingestion check knows about it.** Skipping on the content hash alone would be a
+   trap here: after a provider switch the file is byte-identical, so every document would
+   report `skipped` and stay permanently unsearchable with no error anywhere. `_is_unchanged`
+   therefore requires both a matching hash *and* the existence of chunks embedded by the
+   active model, so a plain `make ingest` re-embeds exactly what needs it.
+4. **Dimensions are checked on every embedding call.** A model returning a width other than
+   `EMBEDDING_DIM` raises `EmbeddingConfigError` naming both numbers, instead of failing
+   later inside Postgres with a type error.
+
+**The passage/query distinction is per-provider, not universal.** Ollama's `nomic-embed-text`
+wants the literal prefixes `search_document: ` and `search_query: `; Gemini takes a
+`task_type` of `RETRIEVAL_DOCUMENT` or `RETRIEVAL_QUERY` and would treat the nomic prefixes
+as part of the text being embedded. Each provider class owns its own convention, which is the
+main reason this is a class per provider rather than a single function with an if-statement.
+
+**`EMBEDDING_DIM` is now substituted into the DDL**, since `vector(768)` is a column type and
+cannot be a query parameter. It is a plain `str.replace`, not `str.format` — the schema
+contains literal `'{}'` defaults for the array and JSONB columns, which `format()` would read
+as placeholders and fail on. This only affects table *creation*; changing the width against an
+existing `chunks` table needs a migration.
+
+### Defaults
+
+`azure_openai` + `ollama`, unchanged from before, so nothing about the existing setup shifted.
+Gemini's defaults are `gemini-2.5-flash` and `models/text-embedding-004` — the latter is 768
+dimensions natively, which matches the default `EMBEDDING_DIM` and the existing schema.
+`GEMINI_EMBEDDING_OUTPUT_DIM` is unset by default and only needs setting for models that
+support truncated output widths.
+
+### Verification status
+
+With no network calls: both providers selected in turn and their configuration checks
+returning correctly for present and absent keys; `ollama:nomic-embed-text` and
+`gemini:models/text-embedding-004` as model ids; the prefix and task-type conventions on the
+right classes; `ChatGoogleGenerativeAI` constructed and accepting `bind_tools`;
+`EmbeddingConfigError` raised for a 3072-wide vector against `EMBEDDING_DIM=768`; the DDL
+rendering `vector(1536)` while leaving all three literal `'{}'` defaults intact; `/health`
+reporting Gemini for both roles with only the database degraded; and the Step 5 API tests
+still passing unchanged.
+
+Unverified: any real Gemini API call. No request has been made to either the chat or the
+embedding endpoint, so model names, quota behaviour, and the exact embedding width returned
+are all untested.
