@@ -11,7 +11,7 @@ from pgvector import Vector
 from psycopg import Connection
 
 from ai_employee.db import connect
-from ai_employee.embeddings import embed_documents
+from ai_employee.embeddings import embed_documents, model_id
 from ai_employee.ingestion import loaders
 from ai_employee.ingestion.chunker import Chunk, chunk
 
@@ -35,8 +35,9 @@ RETURNING id
 """
 
 _INSERT_CHUNK = """
-INSERT INTO chunks (document_id, chunk_index, content, char_count, page_number, embedding)
-VALUES (%s, %s, %s, %s, %s, %s)
+INSERT INTO chunks
+    (document_id, chunk_index, content, char_count, page_number, embedding, embedding_model)
+VALUES (%s, %s, %s, %s, %s, %s, %s)
 """
 
 
@@ -57,11 +58,34 @@ def _embed_in_batches(chunks: list[Chunk]) -> list[list[float]]:
     return vectors
 
 
+_IS_INDEXED = """
+SELECT
+    d.content_hash,
+    EXISTS (
+        SELECT 1 FROM chunks AS c
+        WHERE c.document_id = d.id AND c.embedding_model = %(embedding_model)s
+    ) AS embedded_by_current_model
+FROM documents AS d
+WHERE d.source_path = %(source_path)s
+"""
+
+
 def _is_unchanged(conn: Connection, source_path: str, content_hash: str) -> bool:
+    """True when this file is already indexed with the active embedding model.
+
+    The content hash alone is not enough: after switching embedding provider the file is
+    byte-identical but its stored vectors are in the previous model's space, which retrieval
+    filters out. Skipping on the hash alone would leave the document permanently unsearchable
+    with no error anywhere.
+    """
     row = conn.execute(
-        "SELECT content_hash FROM documents WHERE source_path = %s", (source_path,)
+        _IS_INDEXED, {"source_path": source_path, "embedding_model": model_id()}
     ).fetchone()
-    return row is not None and row[0] == content_hash
+    if row is None:
+        return False
+
+    stored_hash, embedded_by_current_model = row
+    return stored_hash == content_hash and embedded_by_current_model
 
 
 def _store(
@@ -86,11 +110,20 @@ def _store(
     # Re-ingestion replaces the previous chunk set outright; chunk boundaries shift
     # when a document changes, so incremental updates would leave orphans.
     conn.execute("DELETE FROM chunks WHERE document_id = %s", (document_id,))
+    embedding_model = model_id()
     with conn.cursor() as cur:
         cur.executemany(
             _INSERT_CHUNK,
             [
-                (document_id, c.index, c.content, c.char_count, c.page_number, Vector(vector))
+                (
+                    document_id,
+                    c.index,
+                    c.content,
+                    c.char_count,
+                    c.page_number,
+                    Vector(vector),
+                    embedding_model,
+                )
                 for c, vector in zip(chunks, vectors, strict=True)
             ],
         )

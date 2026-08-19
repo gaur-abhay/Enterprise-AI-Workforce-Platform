@@ -1,4 +1,5 @@
--- Idempotent schema for the document store. Applied by ai_employee.db.init_schema().
+-- Idempotent schema for the document store. Applied by ai_employee.db.init_schema(),
+-- which substitutes {embedding_dim} from settings before executing.
 
 CREATE EXTENSION IF NOT EXISTS vector;
 
@@ -24,7 +25,10 @@ CREATE TABLE IF NOT EXISTS chunks (
     content       TEXT NOT NULL,
     char_count    INTEGER NOT NULL,
     page_number   INTEGER,
-    embedding     vector(768) NOT NULL,
+    embedding     vector({embedding_dim}) NOT NULL,
+    -- Which provider and model produced the vector. Vectors from different models are not
+    -- comparable, so retrieval filters on this rather than trusting the table to be uniform.
+    embedding_model TEXT NOT NULL,
     -- Lexical half of the planned hybrid search.
     content_tsv   TSVECTOR GENERATED ALWAYS AS (to_tsvector('english', content)) STORED,
     metadata      JSONB NOT NULL DEFAULT '{}',
@@ -33,6 +37,7 @@ CREATE TABLE IF NOT EXISTS chunks (
 );
 
 CREATE INDEX IF NOT EXISTS chunks_document_id_idx ON chunks (document_id);
+CREATE INDEX IF NOT EXISTS chunks_embedding_model_idx ON chunks (embedding_model);
 CREATE INDEX IF NOT EXISTS chunks_content_tsv_idx ON chunks USING GIN (content_tsv);
 CREATE INDEX IF NOT EXISTS documents_acl_principals_idx ON documents USING GIN (acl_principals);
 

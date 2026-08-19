@@ -32,7 +32,16 @@ def connect(register_types: bool = True) -> Iterator[psycopg.Connection]:
 
 
 def init_schema() -> None:
-    """Apply schema.sql. Safe to run repeatedly."""
+    """Apply schema.sql. Safe to run repeatedly.
+
+    The vector width cannot be a query parameter - it is part of the column type - so it is
+    substituted from settings. Note that this only affects a table being created: changing
+    EMBEDDING_DIM against an existing chunks table needs a migration, not a re-run.
+    """
+    # A plain replace, not str.format: the DDL contains literal '{}' defaults for the array
+    # and jsonb columns, which format() would read as placeholders.
+    embedding_dim = int(get_settings().embedding_dim)
+    sql = SCHEMA_PATH.read_text(encoding="utf-8").replace("{embedding_dim}", str(embedding_dim))
     with connect(register_types=False) as conn:
-        conn.execute(SCHEMA_PATH.read_text(encoding="utf-8"))
+        conn.execute(sql)
         conn.commit()

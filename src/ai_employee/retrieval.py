@@ -13,7 +13,7 @@ from pathlib import Path
 from pgvector import Vector
 
 from ai_employee.db import connect
-from ai_employee.embeddings import embed_query
+from ai_employee.embeddings import embed_query, model_id
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +31,7 @@ SELECT
     1 - (c.embedding <=> %(query)s) AS score
 FROM chunks AS c
 JOIN documents AS d ON d.id = c.document_id
+WHERE c.embedding_model = %(embedding_model)s
 ORDER BY c.embedding <=> %(query)s
 LIMIT %(top_k)s
 """
@@ -52,11 +53,17 @@ def search(query: str, top_k: int = DEFAULT_TOP_K) -> list[SearchHit]:
     """Embed the query and return the closest chunks, most relevant first."""
     top_k = max(1, min(top_k, MAX_TOP_K))
     embedding = Vector(embed_query(query))
+    # Only chunks embedded by the active model are comparable to this query vector. Chunks
+    # left behind by a previous provider are ignored rather than silently scored as garbage.
+    embedding_model = model_id()
 
     with connect() as conn:
-        rows = conn.execute(_SEARCH, {"query": embedding, "top_k": top_k}).fetchall()
+        rows = conn.execute(
+            _SEARCH,
+            {"query": embedding, "top_k": top_k, "embedding_model": embedding_model},
+        ).fetchall()
 
-    logger.debug("search(%r, top_k=%d) -> %d hits", query, top_k, len(rows))
+    logger.debug("search(%r, top_k=%d) -> %d hits [%s]", query, top_k, len(rows), embedding_model)
     return [
         SearchHit(
             chunk_id=chunk_id,
