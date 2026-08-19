@@ -3,12 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import sys
 from dataclasses import dataclass, field
 from typing import Any
 
-from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, ToolMessage
 
 from ai_employee.agent.graph import AgentNotConfiguredError, build_graph, config_for
 from ai_employee.config import get_settings
@@ -19,8 +20,36 @@ logger = logging.getLogger(__name__)
 @dataclass
 class AgentAnswer:
     answer: str
+    sources: list[dict[str, Any]] = field(default_factory=list)
     tool_calls: list[dict[str, Any]] = field(default_factory=list)
     messages: list[BaseMessage] = field(default_factory=list)
+
+
+def _extract_sources(messages: list[BaseMessage]) -> list[dict[str, Any]]:
+    """Collect the passages the model was shown, from the retrieval tool's JSON output.
+
+    These are what was retrieved, not necessarily what the answer used - the model may cite a
+    subset. Treated as an audit trail rather than a citation list.
+    """
+    seen: dict[str, dict[str, Any]] = {}
+    for message in messages:
+        if not isinstance(message, ToolMessage):
+            continue
+        try:
+            payload = json.loads(message.content)
+        except (TypeError, ValueError):
+            logger.debug("tool message %s was not JSON", message.tool_call_id)
+            continue
+        for hit in payload.get("results", []):
+            chunk_id = hit.get("chunk_id")
+            if chunk_id and chunk_id not in seen:
+                seen[chunk_id] = {
+                    "chunk_id": chunk_id,
+                    "source": hit.get("source"),
+                    "page": hit.get("page"),
+                    "score": hit.get("score"),
+                }
+    return list(seen.values())
 
 
 def ask(question: str, thread_id: str = "default") -> AgentAnswer:
@@ -32,7 +61,12 @@ def ask(question: str, thread_id: str = "default") -> AgentAnswer:
 
     messages = state["messages"]
     tool_calls = [call for m in messages if isinstance(m, AIMessage) for call in m.tool_calls]
-    return AgentAnswer(answer=messages[-1].content, tool_calls=tool_calls, messages=messages)
+    return AgentAnswer(
+        answer=messages[-1].content,
+        sources=_extract_sources(messages),
+        tool_calls=tool_calls,
+        messages=messages,
+    )
 
 
 def main(argv: list[str] | None = None) -> int:
