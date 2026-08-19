@@ -216,3 +216,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Ingestion input. Sample documents stay local; the directory is kept.
+data/documents/*
+!data/documents/.gitkeep
