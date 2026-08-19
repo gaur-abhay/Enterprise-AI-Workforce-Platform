@@ -8,16 +8,17 @@ An enterprise AI platform that securely connects to enterprise knowledge, databa
 
 This project is currently under active development. Features, architecture, integrations, and documentation will continue to evolve as development progresses.
 
-Full design reference: [`AI_Employee_Documentation.md`](AI_Employee_Documentation.md).
+Full design reference: [`AI_Employee_Documentation.md`](docs/AI_Employee_Documentation.md).
+Build walkthrough and rationale: [`IMPLEMENTATION.md`](docs/IMPLEMENTATION.md).
 
 ### Progress
 
 | Step | Item | Status |
 |---|---|---|
 | 1 | Docker Compose foundation (Postgres + PGVector, Ollama) | Scaffolded |
-| 2 | Ingestion pipeline (chunk → embed → index) | Not started |
-| 3 | `search_documents` tool | Not started |
-| 4 | LangGraph agent (agent node → tool node → loop) | Not started |
+| 2 | Ingestion pipeline (chunk → embed → index) | Built, partially verified |
+| 3 | `search_documents` tool | Built, partially verified |
+| 4 | LangGraph agent (agent node → tool node → loop) | Built, partially verified |
 | 5 | FastAPI `/chat` endpoint | Not started |
 | 6 | End-to-end smoke test | Not started |
 
@@ -47,7 +48,7 @@ The first should list `vector` as an installed extension; the second should retu
 
 ## Environment
 
-The uv environment is kept outside the repository at `/home/abhay/.virtualenvs/general`, pinned by `UV_PROJECT_ENVIRONMENT` in the `Makefile`, because the repository sits on a Windows mount where package I/O is slow under WSL. Use the `make` targets, or export the variable before running `uv` directly.
+The uv environment is kept outside the repository at `/home/<user>/.virtualenvs/general`, pinned by `UV_PROJECT_ENVIRONMENT` in the `Makefile`, because the repository sits on a Windows mount where package I/O is slow under WSL. Use the `make` targets, or export the variable before running `uv` directly.
 
 ## Configuration
 

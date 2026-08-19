@@ -1,0 +1,433 @@
+# Implementation Notes
+
+Companion to [`AI_Employee_Documentation.md`](AI_Employee_Documentation.md). The master
+document describes *what the platform is meant to be*; this one records *what has actually
+been built, and why each choice was made*, step by step as the build progresses.
+
+Read this when you come back to the code after a gap and need to remember why something
+looks the way it does.
+
+| Step | Scope | Status |
+|---|---|---|
+| 1 | Docker Compose foundation, uv project, source layout | Built, not yet started |
+| 2 | Ingestion pipeline: load → chunk → embed → store | Built, partially verified |
+| 3 | `search_documents` tool | Built, partially verified |
+| 4 | LangGraph agent | Built, partially verified |
+| 5 | FastAPI `/chat` endpoint | Not started |
+| 6 | End-to-end smoke test | Not started |
+
+---
+
+## Step 1 — Foundation
+
+Two containers and a Python project. Nothing application-specific yet.
+
+**`docker-compose.yml`** runs `pgvector/pgvector:pg16` (Postgres with the vector extension
+already compiled in) and `ollama/ollama`. Credentials come from `.env` via variable
+substitution, so no secret is ever written into the YAML. Host ports are overridable
+(`POSTGRES_PORT`, `OLLAMA_PORT`) because a second Postgres on 5432 is a common local
+collision. Both services declare healthchecks and named volumes, so data survives
+`docker compose down`.
+
+**`init.sql`** runs `CREATE EXTENSION IF NOT EXISTS vector`. Note the timing: files in
+`/docker-entrypoint-initdb.d/` execute *only* on first initialisation of an empty data
+volume. Once `pgdata` exists, editing this file has no effect — which is precisely why the
+application schema lives elsewhere (see `schema.sql` below) rather than being bolted on
+here.
+
+**`pyproject.toml`** is a uv project using a hatchling build backend with a `src/` layout.
+`[tool.uv] package = true` makes `uv sync` install the project itself in editable mode, so
+`ai_employee.*` imports resolve from anywhere without `PYTHONPATH` juggling.
+
+**`Makefile`** exists mainly to pin `UV_PROJECT_ENVIRONMENT` to `~/.virtualenvs/general`.
+The repository sits on a `/mnt/c` Windows mount, where package I/O under WSL is slow enough
+to be worth avoiding; keeping the virtualenv on ext4 is a real speed difference, not a
+preference.
+
+**Source layout** — one importable package root, `src/ai_employee/`, with `agent/`,
+`tools/`, `ingestion/`, and `api/` beneath it. A flat `src/agent/`, `src/tools/` tree would
+put top-level names like `agent` and `api` on the import path, where they collide with
+installed distributions.
+
+**`config.py`** is a `pydantic-settings` model read from `.env`, exposed through a cached
+`get_settings()`. Every module reads configuration from there; nothing calls `os.environ`
+directly.
+
+---
+
+## Step 2 — Ingestion pipeline
+
+The job: turn a file on disk into rows in Postgres that can be searched by meaning rather
+than by keyword. Everything downstream — the retrieval tool, the agent's citations, the
+eventual access-control filtering — is shaped by decisions made here.
+
+### Flow
+
+```mermaid
+flowchart TD
+    START(["make ingest"]) --> INIT["init_schema<br/>apply schema.sql, idempotent"]
+    INIT --> DISC["loaders.discover<br/>walk data/documents/"]
+    DISC --> LOOP{"for each file"}
+
+    LOOP --> LOAD["loaders.load<br/>read bytes, SHA-256 hash,<br/>extract page-level text"]
+    LOAD -->|"unknown suffix"| UNSUP(["status: unsupported"])
+    LOAD -->|"no extractable text"| EMPTY(["status: empty"])
+
+    LOAD --> HASH{"content hash<br/>already in DB?"}
+    HASH -->|"yes, and force not set"| SKIP(["status: skipped"])
+    HASH -->|"no, or forced"| CHUNK
+
+    CHUNK["chunker.chunk<br/>split per page, 1000/150,<br/>merge fragments under 120 chars"]
+    CHUNK --> EMBED["embeddings.embed_documents<br/>prefix, call Ollama, L2-normalise<br/>batches of 64"]
+    EMBED --> STORE
+
+    subgraph TX["single transaction per document"]
+        STORE["upsert documents row<br/>ON CONFLICT source_path"] --> DEL["delete existing chunks"]
+        DEL --> INS["insert chunks with vectors"]
+    end
+
+    INS --> COMMIT["commit"] --> DONE(["status: indexed"])
+    DONE --> LOOP
+```
+
+### Data model
+
+Two tables. `documents` is one row per file; `chunks` is one row per retrievable passage.
+
+```mermaid
+erDiagram
+    documents ||--o{ chunks : "ON DELETE CASCADE"
+
+    documents {
+        uuid   id PK
+        text   source_path UK "absolute path, dedupe key"
+        text   title
+        text   mime_type
+        text   content_hash "SHA-256, gates re-ingestion"
+        int    page_count
+        text_array acl_principals "Entra IDs, GIN indexed"
+        jsonb  metadata
+        timestamptz created_at
+        timestamptz updated_at
+    }
+
+    chunks {
+        uuid   id PK
+        uuid   document_id FK
+        int    chunk_index "unique per document"
+        text   content
+        int    char_count
+        int    page_number "null for md/txt"
+        vector embedding "768 dims, HNSW cosine"
+        tsvector content_tsv "generated, GIN indexed"
+        jsonb  metadata
+        timestamptz created_at
+    }
+```
+
+Why the schema is hand-written rather than delegated to `langchain-postgres`: that library
+stores everything in a `langchain_pg_embedding` table with an opaque JSONB metadata blob.
+The retrieval tool has to return `source`, `score`, and `chunk_id` as structured fields to
+enforce the citation rule, and access filtering later needs to be a real indexed `WHERE`
+clause. Both want actual columns.
+
+Two columns are deliberately dead weight today:
+
+- **`content_tsv`** — a generated `tsvector` with a GIN index. It is the lexical half of the
+  hybrid search planned for a later phase. Because it is `GENERATED ALWAYS AS ... STORED`,
+  it populates itself for every row written from now on, so switching on hybrid search costs
+  a query change rather than a backfill.
+- **`acl_principals`** — a `TEXT[]` with a GIN index, empty meaning unrestricted. Adding
+  access control later becomes `WHERE acl_principals = '{}' OR acl_principals && %s`, with
+  no migration and no re-embedding.
+
+The vector index is **HNSW with `vector_cosine_ops`**. Compared with IVFFlat it gives better
+recall at the same latency and, importantly, needs no training pass over existing rows —
+IVFFlat built on an empty table produces a useless index and would have to be rebuilt after
+the first real ingestion.
+
+`schema.sql` is applied by `db.init_schema()` on every ingestion run, not by `init.sql`, for
+the timing reason described in Step 1. Every statement is `IF NOT EXISTS`, so repeated runs
+are harmless. This is a deliberate stand-in for a real migration tool — once the schema
+starts changing in incompatible ways, it should become Alembic.
+
+### Modules
+
+**`loaders.py`** — file bytes to page-level text.
+
+Supports `.pdf` (via pypdf), `.md`, and `.txt`; anything else raises
+`UnsupportedFileTypeError`, which the pipeline catches and reports rather than crashing the
+whole run. Output is a `LoadedDocument` holding a list of `Page` objects, each with an
+optional 1-based page number — populated for PDFs, `None` for the text formats.
+
+The page-level granularity exists so citations can name a page. Concatenating a PDF into one
+string first would be simpler and would throw that away permanently.
+
+The SHA-256 hash is computed over raw bytes in 64 KB blocks, so a large PDF is never held in
+memory twice.
+
+**`chunker.py`** — text to retrievable passages.
+
+`RecursiveCharacterTextSplitter` at 1000 characters with 150 of overlap, trying separators
+in order: paragraph, line, sentence, word. The overlap exists because a passage split
+mid-argument loses the context that makes it answerable; 15% is the usual starting point.
+Splitting happens **per page**, so a chunk never straddles a page boundary and its page
+citation stays truthful.
+
+One non-obvious piece: `_merge_undersized`. Splitting on `\n\n` strands markdown headings as
+their own passages — a real observed output was an 11-character chunk containing only
+`## Security`. Embedding that produces a vector with no answer in it that can still rank
+well against a query about security. Anything under 120 characters is therefore folded
+*forward* into the following passage, which is the right direction: a heading belongs with
+the section it introduces. On the test document this collapsed 6 chunks into 4 and removed
+both fragments. A merged chunk can slightly exceed `CHUNK_SIZE` — accepted, since the
+overshoot is heading-sized.
+
+**`embeddings.py`** — text to vectors. Shared with the retrieval tool rather than living
+inside `ingestion/`, because both sides must behave identically.
+
+`nomic-embed-text` is trained with **task prefixes**, and they are asymmetric:
+`search_document: ` when indexing, `search_query: ` when searching. Omitting them degrades
+retrieval; swapping them is worse. They are module constants so the two call sites cannot
+drift apart. Note that Ollama does not add these automatically.
+
+Vectors are **L2-normalised** before storage. Cosine distance then reduces to a dot product,
+which keeps the HNSW `vector_cosine_ops` index and the scores it returns consistent
+regardless of whether Ollama normalised its output.
+
+**`db.py`** — connection handling.
+
+`connect()` yields a psycopg connection with the pgvector type adapters registered, so
+Python lists can round-trip as `vector` values. It takes `register_types=False` for one
+specific case: `init_schema()` runs before the extension is guaranteed to exist, and
+registering the adapter first would fail on a fresh database. `dsn()` strips the
+`+psycopg` driver suffix, since `DATABASE_URL` is written in SQLAlchemy form for the
+benefit of later components while psycopg wants plain libpq.
+
+**`pipeline.py`** — orchestration.
+
+Per document: hash check, chunk, embed in batches of 64, then write. The write is one
+transaction containing an upsert on `source_path`, a `DELETE` of the document's existing
+chunks, and the inserts. Re-ingestion replaces the chunk set wholesale rather than
+attempting an incremental update, because chunk boundaries shift when a document changes —
+matching old chunks to new ones is guesswork, and the failure mode is orphaned passages that
+still answer queries with stale content.
+
+Every file produces an `IngestResult` with one of four statuses — `indexed`, `skipped`,
+`empty`, `unsupported` — so one unreadable file in a directory never aborts the batch.
+
+**`run.py`** — the CLI behind `make ingest`.
+
+```
+uv run python -m ai_employee.ingestion.run [source] [--force] [--acl PRINCIPAL] [--skip-schema]
+```
+
+Defaults to `data/documents/`. `--force` re-indexes despite an unchanged hash, which is what
+you want after changing chunking parameters or the embedding model. `--acl` is repeatable
+and tags the ingested documents with principals, ready for the access-control phase.
+`--skip-schema` skips the DDL pass. Exit code is non-zero when the source is missing or
+nothing matched.
+
+### Verification status
+
+Confirmed by running against a throwaway file: loading, hashing, recursive discovery, the
+unsupported-extension path, chunking, the fragment merge, and its edge cases (all-tiny
+input, empty input).
+
+Not yet exercised, because both need the containers running:
+
+- the Ollama embedding call, including the assumption that `nomic-embed-text` returns
+  exactly 768 dimensions to match `vector(768)`;
+- every database write, including whether psycopg accepts the multi-statement `schema.sql`
+  in a single `execute()`.
+
+---
+
+## Step 3 — The `search_documents` tool
+
+Step 2 filled the store; this step is the read path, and the first piece the agent will
+actually call.
+
+### Flow
+
+```mermaid
+flowchart LR
+    LLM(["agent decides to search"]) --> ARGS["SearchDocumentsInput<br/>query, top_k"]
+    ARGS -->|"pydantic validation"| TOOL["search_documents"]
+    TOOL --> RET["retrieval.search"]
+    RET --> EMB["embed_query<br/>search_query: prefix, L2-normalise"]
+    EMB --> SQL["SELECT ... ORDER BY embedding &lt;=&gt; query<br/>JOIN documents, LIMIT top_k"]
+    SQL --> HITS["SearchHit list<br/>chunk_id, content, source, page, score"]
+    HITS --> OUT["dict: results, count"]
+    OUT --> LLM
+
+    RET -.->|"exception"| ERR["dict: results empty,<br/>count 0, error message"]
+    ERR -.-> LLM
+```
+
+### Two modules, not one
+
+`retrieval.py` holds the SQL and the embedding call; `tools/search_documents.py` is a thin
+LangChain wrapper over it. The split matters for the evaluation phase: retrieval quality
+(is the right passage in the top 5?) is measurable directly against `retrieval.search`,
+with no model, no tool-calling machinery, and no token spend. Folding the SQL into the
+decorated function would make that impossible to test in isolation.
+
+`tools/__init__.py` exports `ALL_TOOLS`, which is what gets passed to `bind_tools` in Step 4.
+Adding `query_database` or `web_search` later means appending to that list and nothing else.
+
+### Query and scoring
+
+```sql
+1 - (c.embedding <=> %(query)s) AS score
+...
+ORDER BY c.embedding <=> %(query)s
+```
+
+`<=>` is PGVector's cosine distance operator. The ordering uses the raw distance because
+that is what the HNSW index is built on — wrapping it in arithmetic there would prevent the
+index from being used and force a sequential scan over every chunk. The `SELECT` converts it
+to a similarity so the score rises with relevance, which is easier both for the agent to
+interpret and for you to read in logs. Because vectors are L2-normalised on write, this is a
+true cosine similarity in roughly the 0–1 range.
+
+The query embedding uses the `search_query:` prefix; the indexed passages used
+`search_document:`. Same model, opposite prefix — this asymmetry is the whole reason
+`embeddings.py` is shared rather than duplicated.
+
+### Guards
+
+**`top_k` is clamped twice.** Pydantic rejects anything outside 1–20 before the function
+runs, and `retrieval.search` clamps again for direct callers. The model picks this value, and
+an unbounded `LIMIT` chosen by an LLM is a denial-of-service on your own database.
+
+**Failures return data, not exceptions.** If Postgres or Ollama is unreachable, the tool logs
+the traceback and returns `{"results": [], "count": 0, "error": ...}`. A raised exception
+would abort the whole graph run in Step 4; an error payload lets the agent tell the user that
+search is down. The error string is written for the model to act on, not for a human to read.
+
+**The description is a module constant, not a docstring.** The decorator forwards a docstring
+verbatim, continuation indentation included, and that text is sent to the model on every
+single request. It also states what the tool does *not* cover — databases, web, email — which
+is what stops the agent from reaching for it when the right tool does not exist yet.
+
+### Deliberately absent
+
+**No score floor.** Filtering out results below some similarity threshold is the obvious next
+guard, but the cut-off cannot be picked honestly without measurements from real documents.
+Set too high it silently returns nothing; too low it changes nothing. This belongs in the
+evaluation phase, against a golden dataset.
+
+**No ACL filtering.** `documents.acl_principals` exists and is indexed, but the query does not
+reference it — every chunk is currently visible to every caller. That is acceptable only
+while there is no auth layer and no multi-tenant data. It must be closed before anything
+resembling real enterprise content is ingested; the change is a `WHERE` clause, not a
+migration.
+
+### Verification status
+
+Confirmed without containers: tool binding and name, the JSON schema the model receives
+(including the 1–20 bounds), the cleaned description text, `ValidationError` on
+`top_k=500`, and the failure path returning a well-formed error payload instead of raising.
+
+Unverified until the stack is up: the SQL itself. Nothing has executed `<=>`, the join, or
+the `Vector` parameter binding against a live database.
+
+---
+
+## Step 4 — LangGraph agent
+
+The reasoning loop. The model decides whether to search, reads what comes back, and either
+searches again or answers. This is what makes the system *agentic* RAG rather than a fixed
+retrieve-then-generate pipeline: nothing in the code decides that a search happens.
+
+### Graph
+
+```mermaid
+flowchart TD
+    START([__start__]) --> AGENT["agent node<br/>prepend system prompt,<br/>call model bound to ALL_TOOLS"]
+    AGENT -->|"tools_condition:<br/>model emitted tool calls"| TOOLS["tools node<br/>ToolNode runs search_documents"]
+    TOOLS -->|"ToolMessage appended to state"| AGENT
+    AGENT -->|"tools_condition:<br/>plain answer, no tool calls"| END([__end__])
+```
+
+Four nodes including the implicit start and end, three edges plus the conditional pair.
+`tools_condition` is the whole routing decision: it inspects the last message and sends the
+run to `tools` if the model emitted tool calls, otherwise to `END`.
+
+State is `MessagesState` — a message list with an append reducer. Each pass adds the model's
+reply; each tool run adds a `ToolMessage`. A single search costs four messages: human, AI
+with tool calls, tool result, AI answer.
+
+### Files
+
+**`prompts.py`** holds `SYSTEM_PROMPT`. It is organised around the failure modes rather than
+around capabilities: when to search, how to restate the query, that every company-specific
+claim needs a citation, that "I could not find this" is a correct answer, that conflicting
+passages must be reported as conflicting rather than silently resolved, and that a search
+error must be reported rather than papered over with general knowledge. The style section
+exists to stop the model softening precise policy language — "within 90 days" must not
+become "a few months".
+
+**`graph.py`** builds the model, the nodes, and the graph.
+
+**`runner.py`** wraps a turn in `ask(question, thread_id)` and doubles as a CLI:
+
+```
+uv run python -m ai_employee.agent.runner "question" [--thread ID] [--show-tools]
+```
+
+### Decisions
+
+**The system prompt is prepended per turn, not stored in state.** `agent_node` builds
+`[SystemMessage(...), *state["messages"]]` on every call. Storing it as the first message of
+the conversation would freeze whichever version was current when the thread started —
+editing the prompt would then only affect new conversations, which makes iterating on it
+confusing.
+
+**`temperature=0`.** Grounded answers should not vary between runs, and the evaluation
+harness in a later phase depends on repeatability.
+
+**`recursion_limit = 12`.** Each search costs two steps, so this allows roughly five tool
+round trips before LangGraph raises. Without a limit, a model that keeps re-searching on
+empty results loops until the API bill says otherwise.
+
+**Missing configuration fails loudly and specifically.** `AgentNotConfiguredError` names
+exactly which of `AZURE_OPENAI_API_KEY`, `AZURE_OPENAI_ENDPOINT`, and
+`AZURE_OPENAI_DEPLOYMENT` are absent, rather than surfacing an authentication error from deep
+inside the SDK.
+
+**Both the model and the compiled graph are `lru_cache`d.** The graph in particular must be a
+singleton, because the checkpointer lives inside it — rebuilding it per request would discard
+every conversation.
+
+**Tool results reach the model as JSON.** `ToolNode` serialises the returned dict, so the
+`ToolMessage` content is a parseable object rather than a Python `repr`. That is what will
+make audit logging — recording which passages grounded which answer — a matter of reading
+back the message history.
+
+### Known limitation
+
+`InMemorySaver` keeps conversation state in process memory. It is lost on restart and not
+shared between workers, so it works for a single-process API and nothing beyond that. It
+needs to become a Postgres checkpointer before more than one worker is involved. The database
+is already there; this is a swap at `builder.compile(checkpointer=...)`.
+
+### Verification status
+
+The graph was compiled and its structure inspected — nodes, and both conditional branches out
+of `agent`. The loop was then driven end to end with a stub model substituted for Azure, with
+no API key and no database running, which confirmed:
+
+- the system prompt arrives as the first message and is absent from stored state;
+- a tool call routes to `ToolNode`, which executes the real `search_documents`;
+- the tool's error payload comes back as a `ToolMessage` and is fed to the next model call;
+- the model's second reply, having no tool calls, terminates the run;
+- the message sequence is human → AI → tool → AI;
+- a second turn on the same `thread_id` resumes with the prior four messages, so the
+  checkpointer is wired correctly.
+
+Unverified: every real Azure OpenAI call. No request has been made, so the deployment name,
+API version, and tool-calling behaviour of the actual model are all untested — as is whether
+the prompt produces the citation discipline it asks for, which needs real documents and real
+retrieval to judge.
