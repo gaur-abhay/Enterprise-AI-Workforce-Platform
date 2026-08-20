@@ -19,5 +19,6 @@ logs:
 api:
 	uv run uvicorn ai_employee.api.main:app --reload
 
+# SOURCE overrides the default data/documents, e.g. SOURCE=azure://contracts/policies
 ingest:
-	uv run python -m ai_employee.ingestion.run
+	uv run python -m ai_employee.ingestion.run $(SOURCE)

@@ -8,8 +8,11 @@ CREATE TABLE IF NOT EXISTS documents (
     source_path   TEXT NOT NULL UNIQUE,
     title         TEXT NOT NULL,
     mime_type     TEXT NOT NULL,
-    -- SHA-256 of the raw bytes; lets re-ingestion skip unchanged files.
+    -- SHA-256 of the raw bytes; the authority on whether a document has changed.
     content_hash  TEXT NOT NULL,
+    -- The source's own change token (Azure ETag, mtime:size locally). Purely an
+    -- optimisation: it lets an unchanged document be skipped without being read.
+    source_version TEXT,
     page_count    INTEGER,
     -- Entra ID principals allowed to see this document. Empty means unrestricted.
     acl_principals TEXT[] NOT NULL DEFAULT '{}',
@@ -35,6 +38,11 @@ CREATE TABLE IF NOT EXISTS chunks (
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
     UNIQUE (document_id, chunk_index)
 );
+
+-- CREATE TABLE IF NOT EXISTS above is a no-op on an existing database, so columns added
+-- after the first release need their own idempotent statement. This is the point at which
+-- a real migration tool starts earning its keep.
+ALTER TABLE documents ADD COLUMN IF NOT EXISTS source_version TEXT;
 
 CREATE INDEX IF NOT EXISTS chunks_document_id_idx ON chunks (document_id);
 CREATE INDEX IF NOT EXISTS chunks_embedding_model_idx ON chunks (embedding_model);

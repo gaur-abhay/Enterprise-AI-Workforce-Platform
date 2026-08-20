@@ -63,6 +63,7 @@ The uv environment is kept outside the repository at `/home/<user>/.virtualenvs/
 | `OLLAMA_BASE_URL` / `EMBEDDING_MODEL` | Local embedding service and model |
 | `AZURE_OPENAI_*` | Endpoint, key, deployment, and API version |
 | `GOOGLE_API_KEY` / `GEMINI_*` | Gemini key and model names |
+| `AZURE_STORAGE_*` | Blob Storage ingestion source — see [Document sources](#document-sources) |
 
 ### Providers
 
@@ -83,6 +84,69 @@ chunk records the model that produced it and retrieval only searches chunks matc
 active model, so a switch returns no results rather than wrong ones. Run `make ingest` after
 switching: documents already indexed under a different model are re-embedded automatically,
 without needing `--force`.
+
+### Document sources
+
+Documents come from either the local filesystem or an Azure Blob Storage container. The
+ingestion CLI takes one source argument: a path, or an `azure://CONTAINER/PREFIX` URI.
+
+```bash
+make ingest                                        # data/documents/
+make ingest SOURCE=/path/to/handbook.pdf           # a single file
+make ingest SOURCE=azure://corp-docs               # a whole container
+make ingest SOURCE=azure://corp-docs/policies/hr   # blobs under one prefix
+make ingest SOURCE=azure://                        # AZURE_STORAGE_CONTAINER + _PREFIX
+```
+
+Authenticate the container in one of two ways:
+
+| Variable | Use |
+|---|---|
+| `AZURE_STORAGE_CONNECTION_STRING` | Simplest for local testing. Embeds the account key, so it grants the whole account. |
+| `AZURE_STORAGE_ACCOUNT_URL` | Entra ID via `DefaultAzureCredential`. Preferred everywhere else. |
+
+The connection string wins if both are set. `DefaultAzureCredential` does not require the
+application to run on Azure: it resolves a managed identity when there is one, otherwise the
+`AZURE_TENANT_ID` / `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET` service principal, otherwise
+your local `az login` session. Whichever identity it lands on needs the **Storage Blob Data
+Reader** role — Owner or Contributor on the storage account covers the management plane only,
+and blob listing still returns 403.
+
+Blobs are matched by extension (`.pdf`, `.md`, `.txt`) and downloaded to a temporary file
+that is deleted as soon as the document has been parsed. Documents are identified by
+`azure://<account>/<container>/<blob>`, so the same container name in two storage accounts
+stays distinct, and re-ingesting updates the existing rows rather than duplicating them.
+
+### Incremental ingestion
+
+Re-running is cheap: the ETag returned by the blob listing is compared against the one
+recorded at index time, so an unchanged blob is never downloaded at all. A run over an
+unchanged container costs one listing call and nothing else.
+
+| Blob state | Downloaded? | Re-embedded? | Reported |
+|---|---|---|---|
+| ETag matches the indexed copy | No | No | `skipped — unchanged at source` |
+| ETag moved, bytes identical | Yes | No | `skipped — content unchanged` |
+| Content actually changed | Yes | Yes | `indexed` |
+| Deleted from the container | — | — | `pruned`, with `--prune` |
+
+The ETag is only an optimisation; the SHA-256 of the content is still the authority on
+whether a document changed. That matters because a copy, a re-upload, or a metadata edit
+moves the ETag without changing a byte — those cost a download but not an embedding pass,
+and the new ETag is recorded so the next run skips outright. Switching embedding provider
+still re-embeds everything regardless of either check, since vectors from different models
+are not comparable.
+
+Deletions are not handled by default. Removing a blob leaves its rows indexed, and the agent
+will keep citing a document that no longer exists — pass `--prune` to reconcile:
+
+```bash
+uv run python -m ai_employee.ingestion.run azure://corp-docs --prune
+```
+
+Pruning is bounded by the source's own listing scope, so a run over `azure://corp-docs/policies`
+can only ever delete documents under that prefix. It is opt-in because an empty or partial
+listing — a mistyped prefix, a credential that lost its role — would otherwise clear the index.
 
 ## Project structure
 
@@ -108,14 +172,20 @@ without needing `--force`.
 | `make up` / `make down` | Start / stop the Docker Compose stack |
 | `make logs` | Follow container logs |
 | `make api` | Run the FastAPI app with reload |
-| `make ingest` | Run the ingestion pipeline |
+| `make ingest` | Run the ingestion pipeline; `SOURCE=` overrides the input |
 
 ## Usage
 
-Index documents placed in `data/documents/`:
+Index documents placed in `data/documents/`, or point at a blob container:
 
 ```bash
-make ingest                                              # or: --force to re-index
+make ingest                                # or: SOURCE=azure://corp-docs/policies
+```
+
+Re-runs skip documents whose content is unchanged; pass `--force` to re-index anyway:
+
+```bash
+uv run python -m ai_employee.ingestion.run azure://corp-docs --force
 ```
 
 Ask a question from the command line:

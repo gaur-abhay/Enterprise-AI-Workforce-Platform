@@ -6,13 +6,13 @@ import argparse
 import logging
 import sys
 from collections import Counter
-from pathlib import Path
 
 from ai_employee.config import get_settings
 from ai_employee.db import init_schema
 from ai_employee.ingestion.pipeline import ingest
+from ai_employee.ingestion.sources import SourceConfigError, from_spec
 
-DEFAULT_SOURCE = Path("data/documents")
+DEFAULT_SOURCE = "data/documents"
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -20,14 +20,21 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "source",
         nargs="?",
-        type=Path,
         default=DEFAULT_SOURCE,
-        help=f"file or directory to ingest (default: {DEFAULT_SOURCE})",
+        help=(
+            "file or directory to ingest, or azure://CONTAINER/PREFIX for Azure Blob Storage "
+            f"(default: {DEFAULT_SOURCE})"
+        ),
     )
     parser.add_argument(
         "--force",
         action="store_true",
-        help="re-index even when the content hash is unchanged",
+        help="re-index every document, ignoring the change checks",
+    )
+    parser.add_argument(
+        "--prune",
+        action="store_true",
+        help="delete indexed documents that no longer exist in the source",
     )
     parser.add_argument(
         "--acl",
@@ -51,24 +58,36 @@ def main(argv: list[str] | None = None) -> int:
         format="%(levelname)s %(name)s: %(message)s",
     )
 
-    if not args.source.exists():
-        print(f"error: {args.source} does not exist", file=sys.stderr)
+    try:
+        source = from_spec(args.source)
+    except SourceConfigError as exc:
+        print(f"error: {exc}", file=sys.stderr)
         return 1
 
     if not args.skip_schema:
         init_schema()
 
-    results = ingest(args.source, force=args.force, acl_principals=args.acl)
+    try:
+        results = ingest(
+            source, force=args.force, acl_principals=args.acl, prune=args.prune
+        )
+    except SourceConfigError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
     if not results:
-        print(f"no supported documents found under {args.source}")
+        print(f"no supported documents found in {source.label}")
         return 1
 
     counts = Counter(result.status for result in results)
     chunks = sum(result.chunk_count for result in results)
-    print(
+    summary = (
         f"{counts['indexed']} indexed ({chunks} chunks), "
         f"{counts['skipped']} skipped, {counts['empty']} empty, {counts['unsupported']} unsupported"
     )
+    if args.prune:
+        summary += f", {counts['pruned']} pruned"
+    print(summary)
     return 0
 
 

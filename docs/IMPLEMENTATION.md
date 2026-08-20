@@ -222,7 +222,8 @@ Every file produces an `IngestResult` with one of four statuses — `indexed`, `
 uv run python -m ai_employee.ingestion.run [source] [--force] [--acl PRINCIPAL] [--skip-schema]
 ```
 
-Defaults to `data/documents/`. `--force` re-indexes despite an unchanged hash, which is what
+Defaults to `data/documents/`; `source` also accepts an `azure://` URI, described under
+[Document sources](#cross-cutting--document-sources). `--force` re-indexes despite an unchanged hash, which is what
 you want after changing chunking parameters or the embedding model. `--acl` is repeatable
 and tags the ingested documents with principals, ready for the access-control phase.
 `--skip-schema` skips the DDL pass. Exit code is non-zero when the source is missing or
@@ -610,3 +611,202 @@ still passing unchanged.
 Unverified: any real Gemini API call. No request has been made to either the chat or the
 embedding endpoint, so model names, quota behaviour, and the exact embedding width returned
 are all untested.
+
+---
+
+## Cross-cutting — Document sources
+
+Step 2 read from a directory. This adds Azure Blob Storage as a second origin without the
+pipeline learning anything about either one.
+
+```mermaid
+flowchart TD
+    SPEC["CLI source argument"] --> PARSE{"sources.from_spec"}
+    PARSE -->|"azure://..."| ABS["AzureBlobSource<br/>container + prefix"]
+    PARSE -->|"anything else"| LS["LocalSource<br/>root path"]
+
+    ABS --> LIST["list_items<br/>list_blobs, filter by suffix"]
+    LS --> LIST2["list_items<br/>loaders.discover"]
+
+    LIST --> ITEM["SourceItem<br/>uri, key, name"]
+    LIST2 --> ITEM
+    ITEM --> OPEN{"source.open"}
+    OPEN -->|"local"| SAME["yield the path as-is"]
+    OPEN -->|"azure"| DL["download to temp dir<br/>removed on context exit"]
+    SAME --> LOAD["loaders.load(path, uri, name)"]
+    DL --> LOAD
+    LOAD --> REST["unchanged from Step 2:<br/>hash check, chunk, embed, store"]
+```
+
+### The seam
+
+`sources.py` defines a two-method interface — `list_items()` and `open(item)`, the latter a
+context manager yielding a local `Path`. Everything downstream still receives a readable file,
+so the loaders, the chunker, and the SQL are untouched. A third source is a class, not a
+change to the pipeline.
+
+`open()` is a context manager specifically so the remote case can clean up after itself. The
+blob is downloaded into a `TemporaryDirectory` that is removed when the block exits;
+`ingest_item` loads inside that block and does everything else outside it, since parsing has
+already pulled every page into memory by then. Nothing accumulates on disk across a container
+with a thousand blobs.
+
+### Identity is not the file path
+
+`SourceItem` carries three fields because the path a document is *read from* stopped being the
+path it *is*:
+
+- **`uri`** — the stable, globally unique identity, stored as `documents.source_path`. For a
+  blob that is `azure://<account>/<container>/<blob>`. The account is in there deliberately:
+  two storage accounts can both hold a `policies` container, and without it they would collide
+  on the unique index and silently overwrite each other.
+- **`key`** — the provider-native locator used to fetch the bytes (an absolute path, or a blob
+  name). Kept separate so `open()` never has to parse the URI back apart.
+- **`name`** — the file name. `loaders.load` now takes `uri` and `name` as overrides, because
+  the temporary download is called something like `/tmp/ai-employee-blob-xyz/leave.md`.
+  Deriving the title from the temp path would work by accident today and break the moment the
+  temp file is named anything else; deriving `source_path` from it would be actively wrong,
+  producing a new document row on every run.
+
+This is also why `IngestResult` reports `uri` and `name` rather than a `Path` — a `Path` for a
+blob is a lie that formats convincingly.
+
+### Auth
+
+Two styles, resolved in `AzureBlobSource._client`:
+
+1. **`AZURE_STORAGE_CONNECTION_STRING`** — checked first. Simplest for local testing, but it
+   embeds the account key and therefore grants the entire account.
+2. **`AZURE_STORAGE_ACCOUNT_URL`** with `DefaultAzureCredential` — no secret in `.env`.
+
+The second is not restricted to workloads running on Azure, which is the usual
+misunderstanding. `DefaultAzureCredential` is a chain: a managed identity when the host has
+one, otherwise the `AZURE_TENANT_ID` / `AZURE_CLIENT_ID` / `AZURE_CLIENT_SECRET` service
+principal read straight from the environment, otherwise the developer's `az login` session.
+A client's on-premise server therefore uses the same code path with three environment
+variables set.
+
+The operational trap worth recording: the identity needs the **Storage Blob Data Reader**
+role. Owner and Contributor are management-plane roles and do not grant data-plane reads, so
+the portal looks correctly configured while `list_blobs` returns 403.
+
+A SAS token was considered as a third style and left out. It only covers the case where a
+client provides neither an app registration nor the account key, and it adds a third secret
+and a third branch to carry until then.
+
+The SDK imports live inside `_client`, matching the provider abstraction: nothing in a
+filesystem-only run touches `azure.storage.blob`.
+
+### Listing
+
+`list_blobs(name_starts_with=prefix)` filters server-side rather than pulling the container and
+discarding most of it. Two things are dropped locally: blob names whose suffix is not in
+`SUPPORTED_SUFFIXES`, and the zero-length directory markers that hierarchical namespaces
+expose as blobs ending in `/`. Failures — wrong container, expired credential, missing role —
+become `SourceConfigError` with the container in the message, so the CLI prints one line and
+exits 1 rather than surfacing an Azure stack trace.
+
+### Incremental ingestion
+
+The first cut downloaded every blob on every run, because the skip check needed a SHA-256 of
+the bytes. On a container of any size that is the whole cost of the run, spent to conclude
+that nothing changed.
+
+Azure's answer is the **ETag**: an opaque token that changes on every write, returned by
+`list_blobs` as part of the listing that is already being made. So the version is known
+before the download decision, not after.
+
+```mermaid
+flowchart TD
+    LIST["list_blobs<br/>name, etag"] --> STATE{"indexed etag<br/>== listed etag?"}
+    STATE -->|"yes"| SKIP1(["skipped — unchanged at source<br/>nothing fetched"])
+    STATE -->|"no, or never indexed"| DL["download"]
+    DL --> HASH{"SHA-256<br/>== indexed hash?"}
+    HASH -->|"yes"| REC["record the new etag"] --> SKIP2(["skipped — content unchanged"])
+    HASH -->|"no"| WORK["chunk, embed, replace chunks"] --> IDX(["indexed"])
+```
+
+**The ETag never becomes the definition of "changed".** The content hash stays the authority;
+the ETag is a hint that can only skip work, never authorise it. This is what makes the second
+stage necessary: a copy, a re-upload, or a metadata edit moves the ETag without changing a
+byte, and that must cost a download but not an embedding pass. Recording the new ETag at that
+point is the part that stops it recurring — without it, a touched blob re-downloads forever.
+
+Both stages carry the `embedded_by_current_model` condition from the provider work, for the
+same reason it was needed there: after an embedding switch every document is byte-identical
+and ETag-identical, and skipping on either would leave the whole corpus unsearchable in
+silence.
+
+**The stored ETag is the one from the download, not the listing.** A blob rewritten between
+the two calls would otherwise be stored with the old token against the new bytes — and since
+the token then "matches", it would be skipped permanently. Taking the ETag off the download
+response makes the pair self-consistent whichever version won the race.
+
+`documents.source_version` holds it, nullable, added by an `ALTER TABLE ... ADD COLUMN IF NOT
+EXISTS` since `CREATE TABLE IF NOT EXISTS` does nothing to an existing table. A pre-existing
+row has no version, falls through to the hash check, and backfills itself — so the upgrade
+costs exactly one full pass and then goes quiet. The local source fills the same field with
+`mtime_ns:size`, which is coarser (a touch moves it) but lands in the same two-stage check.
+
+### Deletions
+
+Nothing else in the run notices that a document has disappeared. `ingest` walks what the
+source lists and upserts each item, so a deleted blob keeps its rows, keeps matching queries,
+and keeps being cited by an agent that has no way to know. A rename is the same failure in
+disguise: a new URI creates a new row and abandons the old one, so both versions now answer.
+
+`--prune` reconciles the store against the listing: delete every document whose URI starts
+with the source's prefix and was not in the listing, chunks following by `ON DELETE CASCADE`.
+
+Two constraints on that DELETE, both load-bearing:
+
+- **It is bounded by `source.uri_prefix`**, which each source defines to mirror its own
+  listing scope exactly — `name_starts_with` for Azure, the root with a trailing separator
+  for a local directory. Ingesting one prefix can therefore never delete another's documents.
+- **An empty listing never reaches it.** `source_path <> ALL('{}')` is true of every row, so
+  an empty listing would clear the entire prefix — which is precisely the shape of a mistyped
+  prefix or a credential that lost its role. `ingest` returns before pruning when nothing was
+  listed, and `_prune` refuses an empty list independently.
+
+It is opt-in for the same reason: the cost of not pruning is a stale citation, while the cost
+of pruning on a bad listing is the index.
+
+### Verification status
+
+Exercised against a stubbed container client — no Azure account, no network:
+
+- spec parsing for `azure://container/prefix`, `azure://container`, and a bare `azure://`
+  falling back to `AZURE_STORAGE_CONTAINER`, plus its error when that is unset;
+- the prefix reaching `list_blobs` server-side, and local filtering dropping both the `.png`
+  and the directory marker;
+- `azure://<account>/<container>/<blob>` as the stored URI, with `key` and `name` split
+  correctly for a nested blob;
+- download to a temp file that keeps its suffix, the title coming from the blob name rather
+  than the temp path, and the temp directory being gone after the context exits;
+- an unsupported blob raising `UnsupportedFileTypeError` naming the blob, not the temp file;
+- both CLI error paths exiting 1 with a single line.
+
+The incremental behaviour was then driven against the **real database** with a stubbed
+embedder, counting downloads and embedding calls per run:
+
+- first run indexed both blobs, two downloads, and stored the ETag unquoted;
+- an unchanged re-run performed **zero downloads and zero embedding calls**;
+- an ETag change over identical bytes downloaded once, embedded nothing, recorded the new
+  ETag, and the run after it downloaded nothing — the touch does not recur;
+- an edited blob re-indexed and re-embedded, downloading only itself, and replaced its chunks
+  rather than accumulating them;
+- a deleted blob survived a plain run and was removed by `--prune`, leaving no orphaned
+  chunks;
+- a document under a sibling prefix survived that prune untouched;
+- `_prune` with an empty listing deleted nothing;
+- `--force` re-indexed despite a matching ETag.
+
+Against the live database on the local path: the `ALTER TABLE` applied to the existing
+`documents` table, the pre-existing row fell through to the hash check and backfilled its
+version (`skipped — content unchanged`), and the run after it took the cheap path
+(`skipped — unchanged at source`). `documents.source_path` kept the same absolute-path form
+as before the refactor.
+
+Unverified: every real Azure call. No request has been made to Blob Storage, so neither
+credential style, the listing, the ETag format that account returns, nor the download has run
+against an actual container.

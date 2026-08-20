@@ -50,6 +50,16 @@ class Settings(BaseSettings):
         default=None, alias="GEMINI_EMBEDDING_OUTPUT_DIM"
     )
 
+    # Azure Blob Storage ingestion source. Either a connection string, or the account URL
+    # with an Entra ID identity resolved by DefaultAzureCredential.
+    azure_storage_connection_string: str = Field(
+        default="", alias="AZURE_STORAGE_CONNECTION_STRING"
+    )
+    azure_storage_account_url: str = Field(default="", alias="AZURE_STORAGE_ACCOUNT_URL")
+    # Defaults for the bare `azure://` source spec.
+    azure_storage_container: str = Field(default="", alias="AZURE_STORAGE_CONTAINER")
+    azure_storage_prefix: str = Field(default="", alias="AZURE_STORAGE_PREFIX")
+
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
 
 

@@ -30,7 +30,10 @@ class Page:
 
 @dataclass(frozen=True)
 class LoadedDocument:
+    # Where the bytes were read from. For a remote source this is a temporary file.
     path: Path
+    # Stable identity of the document at its source; the dedupe key for re-ingestion.
+    uri: str
     title: str
     mime_type: str
     content_hash: str
@@ -64,18 +67,24 @@ def _load_text(path: Path) -> list[Page]:
     return [Page(text=text, number=None)] if text else []
 
 
-def load(path: Path) -> LoadedDocument:
-    """Read a file into pages. Raises UnsupportedFileTypeError for unknown extensions."""
-    suffix = path.suffix.lower()
+def load(path: Path, *, uri: str | None = None, name: str | None = None) -> LoadedDocument:
+    """Read a file into pages. Raises UnsupportedFileTypeError for unknown extensions.
+
+    uri and name let a remote source keep its own identity and file name while the bytes
+    are read from a temporary download.
+    """
+    name = name or path.name
+    suffix = Path(name).suffix.lower()
     if suffix not in SUPPORTED_SUFFIXES:
         raise UnsupportedFileTypeError(
-            f"{path.name}: '{suffix}' is not supported (expected one of {sorted(SUPPORTED_SUFFIXES)})"
+            f"{name}: '{suffix}' is not supported (expected one of {sorted(SUPPORTED_SUFFIXES)})"
         )
 
     pages = _load_pdf(path) if suffix == ".pdf" else _load_text(path)
     return LoadedDocument(
         path=path,
-        title=path.stem,
+        uri=uri or str(path),
+        title=Path(name).stem,
         mime_type=MIME_TYPES[suffix],
         content_hash=_content_hash(path),
         pages=pages,
