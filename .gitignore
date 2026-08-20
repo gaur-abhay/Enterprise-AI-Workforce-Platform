@@ -220,3 +220,6 @@ __marimo__/
 # Ingestion input. Sample documents stay local; the directory is kept.
 data/documents/*
 !data/documents/.gitkeep
+
+# Master doc. Kept local only.
+docs/AI_Employee_Documentation.md
