@@ -8,7 +8,7 @@ An enterprise AI platform that securely connects to enterprise knowledge, databa
 
 This project is currently under active development. Features, architecture, integrations, and documentation will continue to evolve as development progresses.
 
-Full design reference: Ask Owner.
+Full design reference: `Ask Owner.`
 Build walkthrough and rationale: [`IMPLEMENTATION.md`](docs/IMPLEMENTATION.md).
 
 ### Progress
