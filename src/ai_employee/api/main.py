@@ -3,11 +3,13 @@
 from __future__ import annotations
 
 import logging
+import time
 import uuid
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 import httpx
-from fastapi import FastAPI
+from fastapi import FastAPI, Request, Response
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
@@ -15,14 +17,47 @@ from ai_employee import llm
 from ai_employee.agent import AgentNotConfiguredError, ask
 from ai_employee.config import get_settings
 from ai_employee.db import connect
+from ai_employee.observability import configure_logging, current_request_id, request_context
+
+# Before the app exists, so anything logged during import is handled. Uvicorn configures
+# only its own loggers, so without this the whole application logs into a void.
+configure_logging()
 
 logger = logging.getLogger(__name__)
+
+REQUEST_ID_HEADER = "x-request-id"
 
 app = FastAPI(
     title="AI Employee",
     version="0.1.0",
     description="Agentic RAG over indexed company documents.",
 )
+
+
+@app.middleware("http")
+async def correlate_requests(
+    request: Request, call_next: Callable[[Request], Awaitable[Response]]
+) -> Response:
+    """Bind one id per request and return it on the response.
+
+    A caller that already has a trace id can pass it in the header and see its own id in
+    these logs; anything else gets a fresh one. The id is echoed back so a user reporting a
+    bad answer can name the exact turn.
+    """
+    with request_context(request.headers.get(REQUEST_ID_HEADER)) as request_id:
+        started = time.perf_counter()
+        response = await call_next(request)
+        # DEBUG because uvicorn already writes an access line; this one exists to tie the id
+        # to the path when the access log alone is not enough.
+        logger.debug(
+            "%s %s -> %d in %.3fs",
+            request.method,
+            request.url.path,
+            response.status_code,
+            time.perf_counter() - started,
+        )
+        response.headers[REQUEST_ID_HEADER] = request_id
+        return response
 
 
 class ChatRequest(BaseModel):
@@ -34,15 +69,31 @@ class ChatRequest(BaseModel):
 
 
 class Source(BaseModel):
+    """A retrieved passage, in enough detail for a client to render and verify a citation."""
+
     chunk_id: str
-    source: str | None = None
+    document_id: str | None = None
+    # What the answer cites.
+    source: str | None = Field(default=None, description="File name of the source document")
+    title: str | None = None
+    # Where it actually lives: a path, or azure://account/container/blob.
+    uri: str | None = None
     page: int | None = None
+    chunk_index: int | None = None
+    indexed_at: str | None = Field(
+        default=None, description="When the document was last indexed (ISO-8601)"
+    )
     score: float | None = None
+    # The passage itself, so a client can show what a claim was based on without a second
+    # round trip.
+    content: str | None = None
 
 
 class ChatResponse(BaseModel):
     answer: str
     thread_id: str
+    # Echoes the correlation id in the logs for this turn, so a reported answer can be found.
+    request_id: str | None = None
     # Passages the model was shown, not necessarily the ones it cited.
     sources: list[Source] = []
     tool_calls: list[dict[str, Any]] = []
@@ -56,19 +107,26 @@ def chat(request: ChatRequest) -> ChatResponse | JSONResponse:
     FastAPI runs it in a worker thread instead of stalling the event loop.
     """
     thread_id = request.thread_id or str(uuid.uuid4())
+    request_id = current_request_id()
 
     try:
         result = ask(request.message, thread_id=thread_id)
     except AgentNotConfiguredError as exc:
         logger.error("agent not configured: %s", exc)
-        return JSONResponse(status_code=503, content={"detail": str(exc)})
+        return JSONResponse(
+            status_code=503, content={"detail": str(exc), "request_id": request_id}
+        )
     except Exception:
         logger.exception("chat turn failed for thread %s", thread_id)
-        return JSONResponse(status_code=500, content={"detail": "The agent failed to answer."})
+        return JSONResponse(
+            status_code=500,
+            content={"detail": "The agent failed to answer.", "request_id": request_id},
+        )
 
     return ChatResponse(
         answer=result.answer,
         thread_id=thread_id,
+        request_id=request_id,
         sources=[Source(**source) for source in result.sources],
         tool_calls=result.tool_calls,
     )

@@ -64,6 +64,7 @@ The uv environment is kept outside the repository at `/home/<user>/.virtualenvs/
 | `AZURE_OPENAI_*` | Endpoint, key, deployment, and API version |
 | `GOOGLE_API_KEY` / `GEMINI_*` | Gemini key and model names |
 | `AZURE_STORAGE_*` | Blob Storage ingestion source — see [Document sources](#document-sources) |
+| `LOG_LEVEL` / `LOG_FORMAT` | Application log level, and `text` or `json` — see [Logging](#logging) |
 
 ### Providers
 
@@ -204,9 +205,49 @@ curl -s localhost:8000/chat -H 'content-type: application/json' \
   -d '{"message": "what is the home office stipend?"}'
 ```
 
-`/chat` returns `answer`, a `thread_id`, the `sources` the model was shown, and the
-`tool_calls` it made. Pass the `thread_id` back to continue the same conversation; omit it to
-start a new one. Interactive docs are at `/docs`.
+`/chat` returns `answer`, a `thread_id`, a `request_id`, the `sources` the model was shown,
+and the `tool_calls` it made. Pass the `thread_id` back to continue the same conversation;
+omit it to start a new one. Interactive docs are at `/docs`.
+
+### Citations
+
+The agent cites inline — document name and page next to each claim — and every passage it was
+shown comes back in `sources`, with enough detail to check the claim against the stored
+document:
+
+| Field | |
+|---|---|
+| `source` / `title` | File name and document title. `source` is what the answer cites. |
+| `uri` | Where the document actually lives: a path, or `azure://account/container/blob` |
+| `document_id` / `chunk_id` | Row identity, for linking or fetching the original |
+| `page` / `chunk_index` | Position within the document |
+| `indexed_at` | When the document was last indexed, so a stale answer is recognisable |
+| `content` | The passage itself, so a client can show what a claim rests on |
+| `score` | Cosine similarity, higher is more relevant |
+
+`sources` is what was *retrieved*, not what was cited — the model may use a subset. Treat it
+as an audit trail rather than a bibliography.
+
+### Logging
+
+Every entrypoint configures logging on start. `LOG_LEVEL` applies to this application's
+loggers only; third-party SDKs stay at WARNING, so `LOG_LEVEL=DEBUG` does not bury a run in
+Azure and HTTP client traffic. `LOG_FORMAT=json` emits one object per line for a log shipper.
+
+Each request or CLI run binds a correlation id that prefixes every line it produces:
+
+```
+00:40:36 INFO [3552ff0aadae] ai_employee.retrieval: search 'Doc2' top_k=5 -> 2 hits, best 0.590
+```
+
+The API takes that id from an inbound `x-request-id` header when one is present, returns it in
+the response header and in the `/chat` body, so a user reporting a bad answer can name the
+exact turn to look up.
+
+Retrieval is logged at INFO — the query, hit count, and best score — because a retrieval trace
+that is off by default is not an audit trail. Note that this puts search queries and user
+questions in the logs, alongside document content: they inherit the sensitivity of the indexed
+corpus, and need the same retention policy.
 
 ---
 

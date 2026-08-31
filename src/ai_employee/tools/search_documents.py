@@ -18,8 +18,10 @@ Searches indexed company documents (policies, wikis, reports, internal docs) usi
 vector search. Use this whenever the user asks about company-specific information, policies, \
 procedures, or content that would exist in internal documentation.
 
-Returns matching passages, each with its source document name, page number where available, a \
-relevance score between 0 and 1, and a chunk id. Cite the source of every passage you use.
+Returns matching passages, each with its source document name, title, page number where \
+available, a relevance score between 0 and 1, and identifiers for the passage and its \
+document. Cite the source of every passage you use, by document name and page - the \
+identifiers and uri are for the calling application, not for the answer.
 
 An empty result list means nothing relevant is indexed - say so rather than answering from \
 general knowledge. Low scores across all results mean the same thing.
@@ -56,7 +58,8 @@ def search_documents(query: str, top_k: int = DEFAULT_TOP_K) -> dict:
     except Exception:
         # Surfaced to the agent as data: a tool exception would abort the graph run,
         # whereas an error payload lets the agent report the failure to the user.
-        logger.exception("search_documents failed for query %r", query)
+        logger.exception("search_documents failed (query of %d chars)", len(query))
+        logger.debug("failing query: %r", query)
         return {
             "results": [],
             "count": 0,

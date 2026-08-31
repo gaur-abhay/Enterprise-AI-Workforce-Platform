@@ -8,6 +8,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 LLMProvider = Literal["azure_openai", "gemini"]
 EmbeddingProvider = Literal["ollama", "gemini"]
+LogFormat = Literal["text", "json"]
 
 
 class Settings(BaseSettings):
@@ -60,7 +61,9 @@ class Settings(BaseSettings):
     azure_storage_container: str = Field(default="", alias="AZURE_STORAGE_CONTAINER")
     azure_storage_prefix: str = Field(default="", alias="AZURE_STORAGE_PREFIX")
 
+    # Applies to the ai_employee logger tree only; third-party loggers stay at WARNING.
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
+    log_format: LogFormat = Field(default="text", alias="LOG_FORMAT")
 
 
 @lru_cache

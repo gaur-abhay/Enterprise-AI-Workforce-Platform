@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import argparse
-import logging
 import sys
 from collections import Counter
 
-from ai_employee.config import get_settings
 from ai_employee.db import init_schema
-from ai_employee.ingestion.pipeline import ingest
-from ai_employee.ingestion.sources import SourceConfigError, from_spec
+from ai_employee.ingestion.pipeline import IngestResult, ingest
+from ai_employee.ingestion.sources import Source, SourceConfigError, from_spec
+from ai_employee.observability import configure_logging, request_context
 
 DEFAULT_SOURCE = "data/documents"
 
@@ -53,28 +52,33 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
-    logging.basicConfig(
-        level=get_settings().log_level,
-        format="%(levelname)s %(name)s: %(message)s",
-    )
+    configure_logging()
 
-    try:
-        source = from_spec(args.source)
-    except SourceConfigError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
+    # One id for the whole run, so every document's line can be traced back to the run that
+    # produced it in a shared log.
+    with request_context():
+        try:
+            source = from_spec(args.source)
+        except SourceConfigError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
 
-    if not args.skip_schema:
-        init_schema()
+        if not args.skip_schema:
+            init_schema()
 
-    try:
-        results = ingest(
-            source, force=args.force, acl_principals=args.acl, prune=args.prune
-        )
-    except SourceConfigError as exc:
-        print(f"error: {exc}", file=sys.stderr)
-        return 1
+        try:
+            results = ingest(
+                source, force=args.force, acl_principals=args.acl, prune=args.prune
+            )
+        except SourceConfigError as exc:
+            print(f"error: {exc}", file=sys.stderr)
+            return 1
 
+        return _report(results, source, prune=args.prune)
+
+
+def _report(results: list[IngestResult], source: Source, *, prune: bool) -> int:
+    """Print the one-line summary and pick the exit code."""
     if not results:
         print(f"no supported documents found in {source.label}")
         return 1
@@ -85,7 +89,7 @@ def main(argv: list[str] | None = None) -> int:
         f"{counts['indexed']} indexed ({chunks} chunks), "
         f"{counts['skipped']} skipped, {counts['empty']} empty, {counts['unsupported']} unsupported"
     )
-    if args.prune:
+    if prune:
         summary += f", {counts['pruned']} pruned"
     print(summary)
     return 0

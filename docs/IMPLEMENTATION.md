@@ -810,3 +810,127 @@ as before the refactor.
 Unverified: every real Azure call. No request has been made to Blob Storage, so neither
 credential style, the listing, the ETag format that account returns, nor the download has run
 against an actual container.
+---
+
+## Cross-cutting — Citations and logging
+
+Two problems with the same shape: an answer arrives, and there is no way to check where it
+came from. The first is about what the response carries, the second about what the process
+leaves behind.
+
+### What a citation has to contain
+
+The agent was already instructed to cite — the system prompt requires the source document and
+page next to each claim, and the tool description repeats it. What the citation *rested on*
+was one string: `Path(source_path).name`, the file name and nothing else.
+
+A file name identifies nothing. Two containers, two folders, or a `policy.pdf` from HR and one
+from Finance are indistinguishable in an answer, and there is no path from a citation back to
+the row that produced it. `SearchHit` now carries what makes it checkable:
+
+| Field | Why it is there |
+|---|---|
+| `source` | The file name. What the model cites, unchanged. |
+| `title` | The document's stored title, which was already indexed and never read back. |
+| `uri` | The full `source_path` — a local path, or `azure://account/container/blob`. This is what resolves the citation to one specific file. |
+| `document_id`, `chunk_id` | Row identity, for a client that wants to fetch or link to the source. |
+| `chunk_index`, `page` | Position inside the document. |
+| `indexed_at` | `documents.updated_at`, so "as of when?" has an answer. A stale answer is a different failure from a wrong one, and they are indistinguishable without this. |
+| `content` | The passage itself, so a UI can show what a claim was based on without a second query. |
+
+All of it was already in the two tables; the join simply selected four columns fewer than it
+could have. No migration, and nothing to re-embed.
+
+`_display_name` derives the file name rather than `Path(...).name`, which is right for a
+POSIX path by luck and wrong for a Windows one — `Path("C:\\docs\\a.pdf").name` on Linux is
+the whole string.
+
+**The extra fields ride in the tool payload**, which costs perhaps 25 tokens per hit against
+the ~250 the passage itself already costs. The alternative — a lean payload for the model and
+a second query to hydrate the response — buys that back at the price of a second definition
+of what a citation is, and of an audit trail that is no longer literally what the model saw.
+The tool description states that the identifiers are for the calling application, so they do
+not end up quoted in prose.
+
+`runner._SOURCE_FIELDS` names the fields explicitly rather than passing the hit through, so a
+change to the retrieval payload cannot silently reshape the API response.
+
+**`sources` is still what was retrieved, not what was cited.** The model may use three of five
+passages and there is no reliable way to know which without asking it to say so. Calling it a
+citation list would be a claim the code cannot support; it is an audit trail.
+
+### Logging was off in the API
+
+`observability.py` exists because of one measurable fact: under `make api` the application
+logged nothing. Uvicorn configures only the `uvicorn.*` loggers, so `ai_employee.*` sat at the
+root's default WARNING with no handler attached —
+
+```
+effective level: WARNING
+root handlers: []
+```
+
+— which discards every INFO line in the codebase and pushes the two error paths in `main.py`
+through logging's last-resort handler: bare text, no timestamp, no logger name. Both CLIs
+called `basicConfig` and were fine; the one long-running process was silent.
+
+`configure_logging()` attaches a single handler at each entrypoint, and:
+
+- **the root stays at WARNING while `ai_employee` follows `LOG_LEVEL`.** The Azure and HTTP
+  SDKs log every request at INFO and every header at DEBUG. A root logger set to DEBUG buries
+  an ingestion run in someone else's traffic, so the level applies to our tree only;
+- **`LOG_FORMAT=json`** emits one object per line for a log shipper. Text remains the default
+  because a human reads it far more often at this stage.
+
+The level is applied to `__main__` as well as to `ai_employee`, which is not decoration:
+`python -m ai_employee.agent.runner` executes that module *as* `__main__`, so its
+`getLogger(__name__)` is called `__main__` and sits outside the package tree entirely. The
+first run after this change silently dropped both turn lines while the retrieval lines came
+through — the same failure as the API's, one level down.
+
+### Correlation
+
+A `ContextVar` holds one id for the work in flight; a filter puts it on every record, so
+`[a1b2c3d4e5f6]` prefixes every line from the model, the tool, and the SQL of a single turn.
+
+The API binds it per request in middleware and returns it in the `x-request-id` header and in
+the `/chat` body. A caller that already has a trace id can pass that header in and find its
+own id in these logs. An inbound id is stripped to `[A-Za-z0-9._-]` and cut at 64 characters
+first: a log record is a line in a file, and a newline in a caller-supplied header forges a
+second one. `request_context()` reuses an id already in scope, so `ask()` mints one from the
+CLI and inherits the HTTP request's under the API. The ingestion CLI binds one per run.
+
+What is now logged on the success path, where nothing was before: the question (truncated) and
+thread at the start of a turn, then its duration, tool-call count, passage count and answer
+length; and every retrieval as `search 'query' top_k=5 -> 3 hits, best 0.712`, at INFO rather
+than DEBUG, because a retrieval trace that is off by default is not an audit trail. The
+per-hit breakdown stays at DEBUG.
+
+The generic access line sits at DEBUG since uvicorn already writes one; the middleware exists
+for the id, not to duplicate it.
+
+**Queries and questions appear in the logs.** That is the point of an audit trail and also a
+retention question for a deployment: with document content in the same file, these logs
+inherit the sensitivity of the corpus. The one place it is avoided is the search failure path,
+which logs the query's length and puts the text itself at DEBUG — an exception report is the
+last place that needs to carry user text by default.
+
+### Verification status
+
+Confirmed: the `ai_employee` tree at INFO with the root and `azure.core` left at WARNING;
+`configure_logging()` idempotent under repeated calls; an INFO record reaching the handler
+with `[-]` outside a request and the bound id inside one; nested contexts reusing the outer
+id; the id released afterwards; a caller-supplied id honoured, and one containing a newline
+stripped before it reaches a record; the JSON formatter's keys and `%`-arg rendering.
+
+Against the live database: the enriched `SELECT` executes and returns a UUID `document_id`, a
+populated `title`, the stored URI, an ISO-8601 `indexed_at`, and the passage text, ordered by
+score; the SELECT list is asserted to stay in step with the tuple unpack in `search`.
+
+Through `TestClient`: `x-request-id` returned on every response and echoed when supplied; the
+500 path carrying `request_id` in the body and the matching id in the logged traceback; a
+`/chat` body carrying the full citation fields. Through the CLIs: an ingestion run with one
+id across its lines, and an agent turn logging start and completion around a real model call.
+
+Unverified: the JSON format under a real log shipper, and behaviour under more than one
+uvicorn worker.
