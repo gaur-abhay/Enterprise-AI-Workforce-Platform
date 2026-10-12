@@ -1,0 +1,514 @@
+<title>AI Employee</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+  :root {
+    --ground: #F5F6F3;
+    --ground-sunk: #EDEFEA;
+    --ink: #14181A;
+    --ink-mid: #3E4A4C;
+    --ink-soft: #6C7874;
+    --rule: #D9DED6;
+    --rule-strong: #BCC4B9;
+    --accent: #1D6B5F;
+    --accent-quiet: #E2EBE6;
+    --warm: #A55424;
+    --warm-quiet: #F0E6DC;
+    --slate: #7A8388;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --ground: #101413;
+      --ground-sunk: #171C1B;
+      --ink: #E9ECE6;
+      --ink-mid: #B3BCB6;
+      --ink-soft: #8B958F;
+      --rule: #262D2B;
+      --rule-strong: #39423F;
+      --accent: #5FBBA6;
+      --accent-quiet: #172A26;
+      --warm: #D9925C;
+      --warm-quiet: #2A211A;
+      --slate: #8B9490;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --ground: #101413;
+    --ground-sunk: #171C1B;
+    --ink: #E9ECE6;
+    --ink-mid: #B3BCB6;
+    --ink-soft: #8B958F;
+    --rule: #262D2B;
+    --rule-strong: #39423F;
+    --accent: #5FBBA6;
+    --accent-quiet: #172A26;
+    --warm: #D9925C;
+    --warm-quiet: #2A211A;
+    --slate: #8B9490;
+  }
+
+  body {
+    background: var(--ground);
+    color: var(--ink);
+    font-family: "Newsreader", Georgia, "Times New Roman", serif;
+    font-size: 18px;
+    line-height: 1.62;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .page { max-width: 1020px; margin: 0 auto; padding: 0 2rem 6rem; }
+
+  /* ---------- masthead ---------- */
+
+  .masthead { padding: 5.5rem 0 2.5rem; border-bottom: 1px solid var(--rule-strong); }
+
+  .kicker {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.7rem; font-weight: 500; letter-spacing: 0.16em;
+    text-transform: uppercase; color: var(--accent); margin: 0 0 1.6rem;
+  }
+
+  h1 {
+    font-family: "Archivo", system-ui, sans-serif;
+    font-size: clamp(2.9rem, 8vw, 5rem); font-weight: 700;
+    letter-spacing: -0.035em; line-height: 0.98;
+    margin: 0; text-wrap: balance;
+  }
+
+  .standfirst {
+    font-size: clamp(1.15rem, 2.4vw, 1.4rem); line-height: 1.5;
+    color: var(--ink-mid); max-width: 34ch; margin: 1.4rem 0 0;
+    text-wrap: pretty;
+  }
+
+  .meta {
+    display: flex; flex-wrap: wrap; gap: 0 2.5rem;
+    margin: 3rem 0 0; padding: 0; list-style: none;
+    font-family: "IBM Plex Mono", ui-monospace, monospace; font-size: 0.76rem;
+  }
+  .meta li { display: flex; flex-direction: column; gap: 0.3rem; padding: 0.6rem 0; }
+  .meta b {
+    font-weight: 500; letter-spacing: 0.13em; text-transform: uppercase;
+    color: var(--ink-soft); font-size: 0.66rem;
+  }
+  .meta span { color: var(--ink); }
+  .meta a { color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--rule-strong); }
+  .meta a:hover { border-bottom-color: var(--accent); }
+
+  /* ---------- section scaffold ---------- */
+
+  .band { border-bottom: 1px solid var(--rule); padding: 4rem 0; }
+  .band:last-of-type { border-bottom: none; }
+
+  .band-inner { display: grid; grid-template-columns: 8.5rem minmax(0, 66ch); gap: 3rem; }
+
+  .eyebrow {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.68rem; font-weight: 500; letter-spacing: 0.15em;
+    text-transform: uppercase; color: var(--ink-soft);
+    padding-top: 0.65rem; align-self: start;
+  }
+
+  @media (max-width: 860px) {
+    .band-inner { grid-template-columns: minmax(0, 1fr); gap: 1.2rem; }
+    .eyebrow { padding-top: 0; }
+  }
+
+  h2 {
+    font-family: "Archivo", system-ui, sans-serif;
+    font-size: clamp(1.7rem, 3.6vw, 2.3rem); font-weight: 600;
+    letter-spacing: -0.022em; line-height: 1.12;
+    margin: 0 0 1.4rem; text-wrap: balance;
+  }
+
+  h3 {
+    font-family: "Archivo", system-ui, sans-serif;
+    font-size: 1.05rem; font-weight: 600; letter-spacing: -0.01em;
+    margin: 2.6rem 0 0.6rem;
+  }
+  h3:first-child { margin-top: 0; }
+
+  p { margin: 0 0 1.15rem; text-wrap: pretty; }
+  .prose > p:last-child { margin-bottom: 0; }
+
+  .lede { font-size: 1.1rem; color: var(--ink-mid); }
+
+  a { color: var(--accent); }
+  a:focus-visible, .meta a:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 3px; border-radius: 1px;
+  }
+
+  em { font-style: italic; }
+  strong { font-weight: 600; }
+
+  code, .mono { font-family: "IBM Plex Mono", ui-monospace, monospace; }
+  p code, li code, td code {
+    font-size: 0.84em; background: var(--ground-sunk);
+    padding: 0.1em 0.35em; border: 1px solid var(--rule);
+  }
+
+  /* ---------- lists ---------- */
+
+  ul.plain { list-style: none; margin: 0 0 1.15rem; padding: 0; display: grid; gap: 0.75rem; }
+  ul.plain li { display: grid; grid-template-columns: 1.1rem 1fr; gap: 0.7rem; }
+  ul.plain li::before {
+    content: ""; width: 6px; height: 6px; background: var(--accent);
+    margin-top: 0.62em;
+  }
+
+  /* ---------- status chips ---------- */
+
+  .tag {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.64rem; font-weight: 500; letter-spacing: 0.1em;
+    text-transform: uppercase; white-space: nowrap;
+    padding: 0.2rem 0.42rem; border: 1px solid currentColor;
+  }
+  .tag::before { content: ""; width: 5px; height: 5px; background: currentColor; }
+  .tag-built { color: var(--accent); }
+  .tag-scoped { color: var(--warm); }
+  .tag-planned { color: var(--slate); }
+
+  /* ---------- figures ---------- */
+
+  figure { margin: 2rem 0; }
+  figcaption {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.7rem; letter-spacing: 0.07em; color: var(--ink-soft);
+    margin-top: 0.8rem; line-height: 1.5;
+  }
+
+  .trace {
+    background: var(--ground-sunk); border: 1px solid var(--rule);
+    padding: 1.15rem 1.25rem; overflow-x: auto;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.75rem; line-height: 1.85; color: var(--ink-mid);
+    white-space: pre;
+  }
+  .trace b { color: var(--ink); font-weight: 600; }
+  .trace .id { color: var(--accent); }
+  .trace .dim { color: var(--ink-soft); }
+
+  /* ---------- numbered pipeline ---------- */
+
+  .steps { list-style: none; margin: 2rem 0; padding: 0; display: grid; gap: 0; }
+  .steps li {
+    display: grid; grid-template-columns: 2.4rem 1fr; gap: 1rem;
+    padding: 0.95rem 0; border-top: 1px solid var(--rule);
+  }
+  .steps li:last-child { border-bottom: 1px solid var(--rule); }
+  .steps .n {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.72rem; font-weight: 600; color: var(--accent);
+    padding-top: 0.35em; font-variant-numeric: tabular-nums;
+  }
+  .steps b { font-family: "Archivo", system-ui, sans-serif; font-size: 0.95rem; font-weight: 600; }
+  .steps span { display: block; color: var(--ink-mid); font-size: 0.95rem; line-height: 1.5; }
+
+  /* ---------- tables ---------- */
+
+  .table-wrap { overflow-x: auto; margin: 1.8rem 0; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+  th, td {
+    text-align: left; padding: 0.7rem 1rem 0.7rem 0;
+    border-bottom: 1px solid var(--rule); vertical-align: top;
+  }
+  th {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.64rem; font-weight: 500; letter-spacing: 0.12em;
+    text-transform: uppercase; color: var(--ink-soft);
+    border-bottom-color: var(--rule-strong); padding-bottom: 0.55rem;
+  }
+  td { color: var(--ink-mid); }
+  td:first-child { color: var(--ink); font-weight: 500; }
+  tbody tr:last-child td { border-bottom: none; }
+  .num { font-family: "IBM Plex Mono", ui-monospace, monospace; font-variant-numeric: tabular-nums; }
+
+  /* ---------- decisions ---------- */
+
+  .decision { border-top: 1px solid var(--rule); padding: 1.9rem 0 0.4rem; }
+  .decision:first-of-type { border-top: 1px solid var(--rule-strong); }
+  .decision h3 { margin: 0 0 0.55rem; font-size: 1.12rem; }
+  .decision p { font-size: 0.98rem; color: var(--ink-mid); }
+  .decision p:last-child { margin-bottom: 1.4rem; }
+  .decision .marker {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.66rem; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--accent); display: block; margin-bottom: 0.5rem;
+  }
+
+  /* ---------- callout ---------- */
+
+  .limits {
+    border-top: 2px solid var(--warm); background: var(--warm-quiet);
+    padding: 1.5rem 1.6rem; margin: 2rem 0;
+  }
+  .limits .marker {
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.66rem; letter-spacing: 0.13em; text-transform: uppercase;
+    color: var(--warm); display: block; margin-bottom: 0.9rem;
+  }
+  .limits ul { margin: 0; padding: 0; list-style: none; display: grid; gap: 0.8rem; }
+  .limits li { font-size: 0.95rem; line-height: 1.55; }
+  .limits b { font-family: "Archivo", system-ui, sans-serif; font-size: 0.92rem; }
+
+  /* ---------- code block ---------- */
+
+  pre {
+    background: var(--ground-sunk); border: 1px solid var(--rule);
+    padding: 1.15rem 1.25rem; overflow-x: auto; margin: 1.6rem 0;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.76rem; line-height: 1.8; color: var(--ink-mid);
+  }
+  pre b { color: var(--ink); font-weight: 500; }
+  pre .c { color: var(--ink-soft); }
+  pre .k { color: var(--accent); }
+
+  /* ---------- footer ---------- */
+
+  footer {
+    border-top: 1px solid var(--rule-strong); margin-top: 4rem; padding-top: 2rem;
+    font-family: "IBM Plex Mono", ui-monospace, monospace;
+    font-size: 0.73rem; color: var(--ink-soft); line-height: 1.9;
+  }
+  footer a { color: var(--accent); text-decoration: none; border-bottom: 1px solid var(--rule-strong); }
+  footer a:hover { border-bottom-color: var(--accent); }
+</style>
+
+<div class="page">
+
+  <header class="masthead">
+    <p class="kicker">Enterprise Agentic RAG · Flagship build</p>
+    <h1>AI Employee</h1>
+    <p class="standfirst">An AI colleague that answers from your company's own documents — and shows you exactly where every answer came from.</p>
+    <ul class="meta">
+      <li><b>Built by</b><span>Abhay Gaur · AI Engineer</span></li>
+      <li><b>Stack</b><span>Python · LangGraph · PostgreSQL + PGVector · FastAPI</span></li>
+      <li><b>Stage</b><span>Working end to end, single source of truth</span></li>
+      <li><b>Repository</b><span><a href="https://github.com/gaur-abhay/Enterprise-AI-Workforce-Platform">github.com/gaur-abhay</a></span></li>
+    </ul>
+  </header>
+
+  <section class="band">
+    <div class="band-inner">
+      <p class="eyebrow">The problem</p>
+      <div class="prose">
+        <h2>A model that knows everything except your business</h2>
+        <p class="lede">Ask a general-purpose AI what your travel policy allows, and it will answer confidently. It will also be making it up.</p>
+        <p>Everything an employee actually needs to know lives somewhere the model cannot reach: PDFs in a shared drive, policies in SharePoint, contracts in blob storage, figures in a database. A language model only knows what it was trained on, which produces four predictable failures — invented answers, information that went stale months ago, total blindness to anything company-specific, and no notion of who is allowed to see what.</p>
+        <p>Retrieval-augmented generation fixes the first three by finding the relevant material <em>before</em> the model writes a word. AI Employee is built on the more capable version of that idea: the system decides for itself what to look up and how, rather than following one hard-coded path.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="band-inner">
+      <p class="eyebrow">Today</p>
+      <div class="prose">
+        <h2>What it does right now</h2>
+        <p>Point it at a folder or an Azure Blob container, run one command, and ask questions in plain English — from a terminal or over HTTP. What comes back is grounded in your documents, cites the document and page beside each claim, and says <em>"I could not find anything about that"</em> rather than filling the gap with something plausible.</p>
+
+        <figure>
+          <div class="trace"><span class="dim">00:40:22</span>  <span class="id">[3552ff0aadae]</span>  turn start thread=cli: <b>'what does Doc2 say?'</b>
+<span class="dim">00:40:36</span>  <span class="id">[3552ff0aadae]</span>  search <b>'Doc2'</b> top_k=5 -&gt; 2 hits, best 0.590
+<span class="dim">00:40:40</span>  <span class="id">[3552ff0aadae]</span>  search <b>'Doc2 Docker Desktop'</b> top_k=10 -&gt; 2 hits, best 0.747
+<span class="dim">00:40:41</span>  <span class="id">[3552ff0aadae]</span>  turn done in 18.9s: 2 tool calls, 2 passages</div>
+          <figcaption>An actual logged turn. Nobody wrote the second search — the agent judged the first result weak, reformulated the query, widened the net, and scored better. That decision is the difference between agentic and traditional RAG.</figcaption>
+        </figure>
+
+        <h3>The capabilities that are live</h3>
+        <ul class="plain">
+          <li>Natural-language Q&amp;A grounded in indexed company documents, with an inline citation on every claim.</li>
+          <li>Two document sources behind one interface: a local directory, or an Azure Blob Storage container.</li>
+          <li>Incremental indexing — re-running over an unchanged container costs a single listing call and nothing else.</li>
+          <li>Multi-turn conversation, so follow-up questions keep their context.</li>
+          <li>A chat model and an embedding model chosen independently by configuration: Azure OpenAI, Google Gemini, or a fully local Ollama.</li>
+          <li>Every answer traceable end to end in the logs by a single correlation id.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="band-inner">
+      <p class="eyebrow">How it works</p>
+      <div class="prose">
+        <h2>Two pipelines, one index</h2>
+        <p>Indexing happens offline and populates the store. Answering happens online and reads from it. Keeping them separate is what makes the system cheap to re-run and quick to answer.</p>
+
+        <h3>Indexing — offline</h3>
+        <ol class="steps">
+          <li><span class="n">01</span><div><b>Read</b><span>A local folder or an Azure Blob container, authenticated by connection string or Entra ID.</span></div></li>
+          <li><span class="n">02</span><div><b>Skip what has not changed</b><span>A two-stage check that avoids downloading, then avoids re-processing.</span></div></li>
+          <li><span class="n">03</span><div><b>Parse and split</b><span>PDF, Markdown and plain text, split into overlapping passages with page numbers preserved.</span></div></li>
+          <li><span class="n">04</span><div><b>Embed</b><span>Batched, and stamped with the exact model that produced each vector.</span></div></li>
+          <li><span class="n">05</span><div><b>Store</b><span>PostgreSQL with PGVector, indexed for cosine similarity search.</span></div></li>
+        </ol>
+
+        <h3>Answering — online</h3>
+        <p>A question arrives at the API. The agent decides whether it needs to search at all, forms its own query, reads what comes back, and either searches again with different wording or writes the answer. Nothing in the code makes that call — the reasoning loop does, which is precisely what allows it to recover from a bad first search.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="band-inner">
+      <p class="eyebrow">Engineering</p>
+      <div class="prose">
+        <h2>Six decisions that carry the system</h2>
+        <p class="lede">Most RAG demos work on the happy path. These are the choices that decide whether it still works in month three, on someone else's data.</p>
+
+        <div class="decision">
+          <span class="marker">Decision 01 · Portability</span>
+          <h3>No vendor is hard-wired</h3>
+          <p>The chat model and the embedding model are selected separately by configuration. A client on Azure runs Azure OpenAI; a demo runs on a free Gemini key; a security-sensitive deployment runs embeddings locally through Ollama so document text never leaves the building. Provider SDKs load only when chosen, so a deployment installs what it uses.</p>
+        </div>
+
+        <div class="decision">
+          <span class="marker">Decision 02 · Correctness</span>
+          <h3>Every vector remembers which model made it</h3>
+          <p>Vectors from two different embedding models are not comparable — searching one with the other returns confident nonsense. It is a silent failure, and it is the one most likely to be introduced months later by someone changing a config value. Each stored passage records its model, and search only ever compares like with like. Change the model and the system returns <em>nothing</em> until you re-index, instead of returning something wrong.</p>
+        </div>
+
+        <div class="decision">
+          <span class="marker">Decision 03 · Cost</span>
+          <h3>Re-indexing a large container is nearly free</h3>
+          <p>Two independent checks, in order of cost. First the storage system's own change marker: if it matches what was indexed, the file is never downloaded. If it moved, the file is fetched and hashed — because a re-upload, a copy, or a metadata edit moves that marker without changing a single byte, and re-embedding a document that did not change is pure spend.</p>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>Document state</th><th>Downloaded</th><th>Re-embedded</th></tr></thead>
+              <tbody>
+                <tr><td>Unchanged</td><td>No</td><td>No</td></tr>
+                <tr><td>Touched, contents identical</td><td>Yes</td><td>No</td></tr>
+                <tr><td>Genuinely edited</td><td>Yes</td><td>Yes</td></tr>
+                <tr><td>Deleted at source</td><td>—</td><td>Removed from the index</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="decision">
+          <span class="marker">Decision 04 · Trust</span>
+          <h3>Citations you can actually check</h3>
+          <p>A citation that says <code>policy.pdf</code> proves nothing — three departments have a <code>policy.pdf</code>. Every passage returned carries the document's full location, its identity in the store, its page, when it was last indexed, and the passage text itself. A stale answer and a wrong answer look identical to a reader; the indexing timestamp is what separates them.</p>
+          <pre><span class="c">// one entry from the sources array on every answer</span>
+{
+  <span class="k">"source"</span>:      "Employee-Handbook.pdf",
+  <span class="k">"uri"</span>:         "azure://acmecorp/hr-docs/Employee-Handbook.pdf",
+  <span class="k">"document_id"</span>: "8f2c1e04-…",
+  <span class="k">"page"</span>:        12,
+  <span class="k">"indexed_at"</span>:  "2026-08-20T19:03:51Z",
+  <span class="k">"score"</span>:       0.747,
+  <span class="k">"content"</span>:     "Employees receive a one-time stipend of…"
+}</pre>
+        </div>
+
+        <div class="decision">
+          <span class="marker">Decision 05 · Safety</span>
+          <h3>Deleting from the index is opt-in and bounded</h3>
+          <p>Removing documents that vanished from the source is necessary — otherwise the agent keeps citing a policy that was withdrawn. It is also the single most destructive operation in the system: a mistyped folder name or a credential that quietly lost its permissions produces an empty listing, and an empty listing naively means <em>delete everything</em>. So it never runs by default, it can only ever touch the exact scope that was just indexed, and an empty listing is refused by two independent guards.</p>
+        </div>
+
+        <div class="decision">
+          <span class="marker">Decision 06 · Accountability</span>
+          <h3>Every answer is reconstructable</h3>
+          <p>One correlation id is bound to each request and stamped on every line it produces — the model call, the searches, the database queries — and returned to the caller. A user reporting a bad answer can name the exact turn, and the log shows what was searched, what came back, and how it scored. In a regulated environment that trace is not a nice-to-have; it is the audit.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="band-inner">
+      <p class="eyebrow">Status</p>
+      <div class="prose">
+        <h2>What is built, and what is honestly not</h2>
+        <p>The project keeps a status tag against every capability so the documentation doubles as a decision log rather than a wishlist.</p>
+
+        <div class="table-wrap">
+          <table>
+            <thead><tr><th>Area</th><th>State</th><th>Detail</th></tr></thead>
+            <tbody>
+              <tr><td>Grounded Q&amp;A with citations</td><td><span class="tag tag-built">Built</span></td><td>End to end, verified against a live database and a real model</td></tr>
+              <tr><td>Agent &amp; tool loop</td><td><span class="tag tag-built">Built</span></td><td>LangGraph; the model decides when and what to search</td></tr>
+              <tr><td>Local file source</td><td><span class="tag tag-built">Built</span></td><td>PDF, Markdown, plain text</td></tr>
+              <tr><td>Azure Blob source</td><td><span class="tag tag-built">Built</span></td><td>Logic verified against a simulated container; not yet run against a real account</td></tr>
+              <tr><td>Incremental sync &amp; pruning</td><td><span class="tag tag-built">Built</span></td><td>Verified against the live database, counting downloads and embedding calls</td></tr>
+              <tr><td>Provider independence</td><td><span class="tag tag-built">Built</span></td><td>Azure OpenAI · Gemini · Ollama</td></tr>
+              <tr><td>Logging &amp; correlation</td><td><span class="tag tag-built">Built</span></td><td>Text or JSON, one id per request</td></tr>
+              <tr><td>Access control (ACL trimming)</td><td><span class="tag tag-scoped">Scoped</span></td><td>Stored and indexed at ingestion; not yet enforced at retrieval</td></tr>
+              <tr><td>Authentication (Entra ID)</td><td><span class="tag tag-scoped">Scoped</span></td><td>No identity reaches the API yet</td></tr>
+              <tr><td>Evaluation harness</td><td><span class="tag tag-scoped">Scoped</span></td><td>Golden dataset and LLM-as-judge scoring</td></tr>
+              <tr><td>Hybrid search &amp; reranking</td><td><span class="tag tag-planned">Planned</span></td><td>Keyword index already in place, fusion not wired</td></tr>
+              <tr><td>SQL, CRM and web tools</td><td><span class="tag tag-planned">Planned</span></td><td>The agent is built to take more tools without changing its loop</td></tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="limits">
+          <span class="marker">Known limits — deliberate, documented</span>
+          <ul>
+            <li><b>Access control is not enforced yet.</b> Document permissions are captured at ingestion and indexed, but retrieval does not filter on them, so every passage is currently visible to every caller. Acceptable while there is no authentication layer and no real multi-department content; it must close before there is. The fix is a filter clause, not a rebuild — which is exactly why the permissions were captured from day one.</li>
+            <li><b>No score threshold on retrieval.</b> The obvious next guard, and deliberately absent: the cut-off cannot be chosen honestly without measurements from a real corpus. Set too high it silently returns nothing. That belongs after the evaluation harness, not before.</li>
+            <li><b>Conversations are held in memory.</b> They do not survive a restart. Fine for a single-process build, replaced by a database-backed store before multi-worker deployment.</li>
+            <li><b>Scanned PDFs index as empty.</b> There is no OCR stage yet, so an image-only PDF is reported as having no extractable text rather than silently indexing nothing.</li>
+          </ul>
+        </div>
+
+        <p>Publishing this list is the point. A system that cannot tell you what it does not do yet is not one you should trust with your documents.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="band-inner">
+      <p class="eyebrow">Roadmap</p>
+      <div class="prose">
+        <h2>Where it goes next</h2>
+        <p>Five phases, built in order, because each one depends on the last being real.</p>
+        <ol class="steps">
+          <li><span class="n">01</span><div><b>Single-source RAG <span class="tag tag-built">Built</span></b><span>Prove grounded question answering end to end against one source.</span></div></li>
+          <li><span class="n">02</span><div><b>Multi-source &amp; tools <span class="tag tag-scoped">Scoped</span></b><span>The agent chooses between documents, databases and APIs.</span></div></li>
+          <li><span class="n">03</span><div><b>Security trimming <span class="tag tag-planned">Planned</span></b><span>Entra ID identity, and retrieval filtered to what the asker may read.</span></div></li>
+          <li><span class="n">04</span><div><b>Evaluation harness <span class="tag tag-planned">Planned</span></b><span>A golden dataset and automated scoring, so quality changes are measured rather than assumed.</span></div></li>
+          <li><span class="n">05</span><div><b>Workflow automation <span class="tag tag-planned">Planned</span></b><span>Report generation and multi-step tasks across departments.</span></div></li>
+        </ol>
+      </div>
+    </div>
+  </section>
+
+  <section class="band">
+    <div class="band-inner">
+      <p class="eyebrow">Run it</p>
+      <div class="prose">
+        <h2>Four commands</h2>
+        <p>The cheapest path needs one free Google API key and Docker. Nothing else.</p>
+        <pre><span class="c"># 1 · configure</span>
+cp .env.example .env
+
+<span class="c"># 2 · install and start PostgreSQL with PGVector</span>
+make install &amp;&amp; make up
+
+<span class="c"># 3 · index whatever is in data/documents/ — or a blob container</span>
+make ingest
+make ingest <b>SOURCE=azure://corp-docs/policies</b>
+
+<span class="c"># 4 · ask</span>
+uv run python -m ai_employee.agent.runner <b>"what is the home office stipend?"</b></pre>
+        <p>Or run <code>make api</code> and post to <code>/chat</code>, which returns the answer, the passages behind it, the tool calls the agent made, and the correlation id for the turn.</p>
+      </div>
+    </div>
+  </section>
+
+  <footer>
+    <p>AI Employee · Enterprise Agentic RAG Platform<br>
+    © 2026 Abhay Gaur. All rights reserved. Published for portfolio and demonstration purposes.<br>
+    <a href="https://github.com/gaur-abhay/Enterprise-AI-Workforce-Platform">github.com/gaur-abhay/Enterprise-AI-Workforce-Platform</a></p>
+  </footer>
+
+</div>

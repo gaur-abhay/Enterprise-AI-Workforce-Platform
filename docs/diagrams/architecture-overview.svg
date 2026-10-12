@@ -1,0 +1,216 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 980" width="1600" height="980" font-family="Inter, 'Segoe UI', system-ui, -apple-system, sans-serif">
+  <defs>
+    <linearGradient id="hero" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#4F46E5"/>
+      <stop offset="55%" stop-color="#6366F1"/>
+      <stop offset="100%" stop-color="#8B5CF6"/>
+    </linearGradient>
+    <linearGradient id="surface" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#FFFFFF"/>
+      <stop offset="100%" stop-color="#F8FAFF"/>
+    </linearGradient>
+    <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="5.5" markerHeight="5.5" orient="auto-start-reverse">
+      <path d="M0,0 L10,5 L0,10 z" fill="#94A3B8"/>
+    </marker>
+    <filter id="sh" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="2" stdDeviation="5" flood-color="#0F172A" flood-opacity="0.08"/>
+    </filter>
+    <filter id="shHero" x="-20%" y="-20%" width="140%" height="140%">
+      <feDropShadow dx="0" dy="6" stdDeviation="12" flood-color="#4F46E5" flood-opacity="0.28"/>
+    </filter>
+  </defs>
+
+  <rect width="1600" height="980" fill="#F6F8FC"/>
+
+  <!-- ── Title ───────────────────────────────────────────── -->
+  <text x="60" y="54" font-size="30"><tspan font-weight="700" fill="#0F172A">AI Employee</tspan><tspan font-weight="400" fill="#94A3B8">  —  Autonomous AI Coworker</tspan></text>
+  <text x="60" y="82" font-size="15" fill="#64748B">Lives inside your Microsoft Teams workspace · Agentic RAG and tool execution · governed by design</text>
+
+  <!-- ── Row A · surfaces ────────────────────────────────── -->
+  <g filter="url(#sh)">
+    <rect x="160" y="120" width="600" height="95" rx="16" fill="url(#surface)" stroke="#E2E8F0"/>
+    <rect x="840" y="120" width="600" height="95" rx="16" fill="url(#surface)" stroke="#E2E8F0"/>
+  </g>
+  <rect x="160" y="120" width="600" height="4" rx="2" fill="#5B5BD6"/>
+  <rect x="840" y="120" width="600" height="4" rx="2" fill="#5B5BD6"/>
+
+  <rect x="192" y="145" width="46" height="46" rx="13" fill="#EEF0FF"/>
+  <g stroke="#5B5BD6" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" transform="translate(192,145)">
+    <path d="M12,15 h22 a4,4 0 0 1 4,4 v10 a4,4 0 0 1 -4,4 h-11 l-7,5 v-5 h-4 a4,4 0 0 1 -4,-4 v-10 a4,4 0 0 1 4,-4 z"/>
+    <path d="M18,22 h10 M18,27 h6"/>
+  </g>
+  <text x="256" y="162" font-size="20" font-weight="650" fill="#0F172A">Microsoft Teams</text>
+  <text x="256" y="186" font-size="14" fill="#64748B">Anyone on the team just @mentions it, like a colleague</text>
+
+  <rect x="872" y="145" width="46" height="46" rx="13" fill="#EEF0FF"/>
+  <g stroke="#5B5BD6" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" transform="translate(872,145)">
+    <rect x="9" y="12" width="28" height="23" rx="3"/>
+    <path d="M9,19 h28"/>
+    <path d="M15,30 v-4 M22,30 v-7 M29,30 v-3"/>
+  </g>
+  <text x="936" y="162" font-size="20" font-weight="650" fill="#0F172A">Admin Dashboard</text>
+  <text x="936" y="186" font-size="14" fill="#64748B">Setup, connections, approvals and the audit trail</text>
+
+  <line x1="460" y1="215" x2="460" y2="246" stroke="#94A3B8" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="1140" y1="215" x2="1140" y2="246" stroke="#94A3B8" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- ── Row B · the coworker ────────────────────────────── -->
+  <g filter="url(#shHero)">
+    <rect x="60" y="250" width="1480" height="108" rx="18" fill="url(#hero)"/>
+  </g>
+  <circle cx="126" cy="304" r="31" fill="#FFFFFF" fill-opacity="0.16"/>
+  <g transform="translate(126,304)" fill="#FFFFFF">
+    <path d="M0,-17 L4.4,-4.4 L17,0 L4.4,4.4 L0,17 L-4.4,4.4 L-17,0 L-4.4,-4.4 Z"/>
+    <path d="M12,-15 L13.6,-10.4 L18,-9 L13.6,-7.6 L12,-3 L10.4,-7.6 L6,-9 L10.4,-10.4 Z" fill-opacity="0.75"/>
+  </g>
+  <text x="182" y="296" font-size="26" font-weight="700" fill="#FFFFFF">The AI Coworker</text>
+  <text x="182" y="327" font-size="15.5" fill="#FFFFFF" fill-opacity="0.9">Understands the request → plans the work → acts across your systems → reports back in the channel</text>
+  <rect x="1230" y="280" width="290" height="48" rx="24" fill="#FFFFFF" fill-opacity="0.15"/>
+  <text x="1375" y="310" font-size="14.5" font-weight="600" fill="#FFFFFF" text-anchor="middle">One coworker, shared by the team</text>
+
+  <line x1="233" y1="358" x2="233" y2="383" stroke="#94A3B8" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="611" y1="358" x2="611" y2="383" stroke="#94A3B8" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="989" y1="358" x2="989" y2="383" stroke="#94A3B8" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="1367" y1="358" x2="1367" y2="383" stroke="#94A3B8" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- ── Row C · capabilities ────────────────────────────── -->
+  <g filter="url(#sh)">
+    <rect x="60" y="387" width="346" height="243" rx="16" fill="#FFFFFF" stroke="#E2E8F0"/>
+    <rect x="438" y="387" width="346" height="243" rx="16" fill="#FFFFFF" stroke="#E2E8F0"/>
+    <rect x="816" y="387" width="346" height="243" rx="16" fill="#FFFFFF" stroke="#E2E8F0"/>
+    <rect x="1194" y="387" width="346" height="243" rx="16" fill="#FFFFFF" stroke="#E2E8F0"/>
+  </g>
+  <path d="M60,403 a16,16 0 0 1 16,-16 h314 a16,16 0 0 1 16,16 z" fill="#0D9488"/>
+  <path d="M438,403 a16,16 0 0 1 16,-16 h314 a16,16 0 0 1 16,16 z" fill="#EA580C"/>
+  <path d="M816,403 a16,16 0 0 1 16,-16 h314 a16,16 0 0 1 16,16 z" fill="#7C3AED"/>
+  <path d="M1194,403 a16,16 0 0 1 16,-16 h314 a16,16 0 0 1 16,16 z" fill="#2563EB"/>
+
+  <!-- Knowledge -->
+  <rect x="88" y="427" width="48" height="48" rx="13" fill="#CCFBF1"/>
+  <g stroke="#0D9488" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" transform="translate(88,427)">
+    <path d="M14,12 h13 l7,7 v17 a2,2 0 0 1 -2,2 H16 a2,2 0 0 1 -2,-2 V14 a2,2 0 0 1 2,-2 z"/>
+    <path d="M27,12 v7 h7"/>
+    <path d="M19,26 h10 M19,31 h7"/>
+  </g>
+  <text x="88" y="503" font-size="11.5" font-weight="700" fill="#0D9488" letter-spacing="1.3">KNOWLEDGE LAYER</text>
+  <text x="88" y="529" font-size="19" font-weight="650" fill="#0F172A">Agentic RAG</text>
+  <circle cx="94" cy="559" r="3" fill="#0D9488"/><text x="108" y="564" font-size="14" fill="#475569">Searches your private documents</text>
+  <circle cx="94" cy="585" r="3" fill="#0D9488"/><text x="108" y="590" font-size="14" fill="#475569">Cites the exact source every time</text>
+  <circle cx="94" cy="611" r="3" fill="#0D9488"/><text x="108" y="616" font-size="14" fill="#475569">Shows only what you may see</text>
+
+  <!-- Actions -->
+  <rect x="466" y="427" width="48" height="48" rx="13" fill="#FFEDD5"/>
+  <g stroke="#EA580C" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" transform="translate(466,427)">
+    <path d="M26,10 L15,27 h8 l-2,11 L34,21 h-9 z"/>
+  </g>
+  <text x="466" y="503" font-size="11.5" font-weight="700" fill="#EA580C" letter-spacing="1.3">ACTION LAYER</text>
+  <text x="466" y="529" font-size="19" font-weight="650" fill="#0F172A">Real Execution</text>
+  <circle cx="472" cy="559" r="3" fill="#EA580C"/><text x="486" y="564" font-size="14" fill="#475569">Queries databases and CRM</text>
+  <circle cx="472" cy="585" r="3" fill="#EA580C"/><text x="486" y="590" font-size="14" fill="#475569">Sends mail, creates records</text>
+  <circle cx="472" cy="611" r="3" fill="#EA580C"/><text x="486" y="616" font-size="14" fill="#475569">Finishes the task, not a draft</text>
+
+  <!-- Memory -->
+  <rect x="844" y="427" width="48" height="48" rx="13" fill="#EDE9FE"/>
+  <g stroke="#7C3AED" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" transform="translate(844,427)">
+    <rect x="12" y="14" width="24" height="6" rx="3"/>
+    <rect x="12" y="24" width="24" height="6" rx="3"/>
+    <path d="M16,34 h16"/>
+  </g>
+  <text x="844" y="503" font-size="11.5" font-weight="700" fill="#7C3AED" letter-spacing="1.3">MEMORY LAYER</text>
+  <text x="844" y="529" font-size="19" font-weight="650" fill="#0F172A">Shared Context</text>
+  <circle cx="850" cy="559" r="3" fill="#7C3AED"/><text x="864" y="564" font-size="14" fill="#475569">Remembers the conversation</text>
+  <circle cx="850" cy="585" r="3" fill="#7C3AED"/><text x="864" y="590" font-size="14" fill="#475569">Learns your team's terms</text>
+  <circle cx="850" cy="611" r="3" fill="#7C3AED"/><text x="864" y="616" font-size="14" fill="#475569">Inspectable and correctable</text>
+
+  <!-- Automation -->
+  <rect x="1222" y="427" width="48" height="48" rx="13" fill="#DBEAFE"/>
+  <g stroke="#2563EB" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" transform="translate(1222,427)">
+    <circle cx="24" cy="24" r="12"/>
+    <path d="M24,24 V17 M24,24 l6,4"/>
+  </g>
+  <text x="1222" y="503" font-size="11.5" font-weight="700" fill="#2563EB" letter-spacing="1.3">AUTOMATION LAYER</text>
+  <text x="1222" y="529" font-size="19" font-weight="650" fill="#0F172A">Works Unattended</text>
+  <circle cx="1228" cy="559" r="3" fill="#2563EB"/><text x="1242" y="564" font-size="14" fill="#475569">Runs on a schedule you set</text>
+  <circle cx="1228" cy="585" r="3" fill="#2563EB"/><text x="1242" y="590" font-size="14" fill="#475569">Keeps working while you are away</text>
+  <circle cx="1228" cy="611" r="3" fill="#2563EB"/><text x="1242" y="616" font-size="14" fill="#475569">Posts results back to the channel</text>
+
+  <!-- ── Row D · guardrails ─────────────────────────────── -->
+  <rect x="60" y="660" width="1480" height="86" rx="16" fill="#ECFDF5" stroke="#A7F3D0" stroke-width="1.5"/>
+  <text x="92" y="697" font-size="11.5" font-weight="700" fill="#059669" letter-spacing="1.3">ENTERPRISE</text>
+  <text x="92" y="716" font-size="11.5" font-weight="700" fill="#059669" letter-spacing="1.3">GUARDRAILS</text>
+
+  <g stroke="#059669" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M266,689 L279,694 V703 C279,711 273,717 266,720 C259,717 253,711 253,703 V694 Z"/>
+  </g>
+  <text x="296" y="709" font-size="15" font-weight="600" fill="#065F46">Per-user permissions</text>
+  <text x="296" y="728" font-size="12.5" fill="#059669">it sees only what you can see</text>
+
+  <g stroke="#059669" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="662" cy="700" r="12"/>
+    <path d="M656,700 l4,4 l8,-8"/>
+  </g>
+  <text x="690" y="709" font-size="15" font-weight="600" fill="#065F46">Human approval</text>
+  <text x="690" y="728" font-size="12.5" fill="#059669">asked before anything sensitive</text>
+
+  <g stroke="#059669" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="1042" y="688" width="20" height="25" rx="2.5"/>
+    <path d="M1047,695 h10 M1047,701 h10 M1047,707 h6"/>
+  </g>
+  <text x="1080" y="709" font-size="15" font-weight="600" fill="#065F46">Complete audit trail</text>
+  <text x="1080" y="728" font-size="12.5" fill="#059669">every action, who approved it</text>
+
+  <line x1="400" y1="746" x2="400" y2="772" stroke="#94A3B8" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="800" y1="746" x2="800" y2="772" stroke="#94A3B8" stroke-width="2" marker-end="url(#arrow)"/>
+  <line x1="1200" y1="746" x2="1200" y2="772" stroke="#94A3B8" stroke-width="2" marker-end="url(#arrow)"/>
+
+  <!-- ── Row E · connected systems ──────────────────────── -->
+  <text x="60" y="792" font-size="11.5" font-weight="700" fill="#94A3B8" letter-spacing="1.3">CONNECTED SYSTEMS</text>
+
+  <g filter="url(#sh)">
+    <rect x="60" y="806" width="276" height="112" rx="14" fill="#FFFFFF" stroke="#E2E8F0"/>
+    <rect x="361" y="806" width="276" height="112" rx="14" fill="#FFFFFF" stroke="#E2E8F0"/>
+    <rect x="662" y="806" width="276" height="112" rx="14" fill="#FFFFFF" stroke="#E2E8F0"/>
+    <rect x="963" y="806" width="276" height="112" rx="14" fill="#FFFFFF" stroke="#E2E8F0"/>
+    <rect x="1264" y="806" width="276" height="112" rx="14" fill="#FFFFFF" stroke="#E2E8F0"/>
+  </g>
+
+  <g stroke="#475569" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" transform="translate(182,822)">
+    <path d="M7,2 h12 l6,6 v18 a2,2 0 0 1 -2,2 H9 a2,2 0 0 1 -2,-2 V4 a2,2 0 0 1 2,-2 z"/>
+    <path d="M19,2 v6 h6"/>
+  </g>
+  <text x="198" y="884" font-size="15" font-weight="600" fill="#0F172A" text-anchor="middle">Documents</text>
+  <text x="198" y="904" font-size="12.5" fill="#64748B" text-anchor="middle">Blob, SharePoint, folders</text>
+
+  <g stroke="#475569" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" transform="translate(483,822)">
+    <ellipse cx="16" cy="6" rx="11" ry="4"/>
+    <path d="M5,6 v16 c0,2.2 4.9,4 11,4 s11,-1.8 11,-4 V6"/>
+    <path d="M5,14 c0,2.2 4.9,4 11,4 s11,-1.8 11,-4"/>
+  </g>
+  <text x="499" y="884" font-size="15" font-weight="600" fill="#0F172A" text-anchor="middle">Databases</text>
+  <text x="499" y="904" font-size="12.5" fill="#64748B" text-anchor="middle">SQL Server, PostgreSQL</text>
+
+  <g stroke="#475569" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" transform="translate(784,822)">
+    <rect x="3" y="4" width="26" height="22" rx="3"/>
+    <circle cx="12" cy="13" r="3.5"/>
+    <path d="M6,22 c0,-3.4 2.7,-5 6,-5 s6,1.6 6,5"/>
+    <path d="M22,11 h4 M22,16 h4"/>
+  </g>
+  <text x="800" y="884" font-size="15" font-weight="600" fill="#0F172A" text-anchor="middle">CRM</text>
+  <text x="800" y="904" font-size="12.5" fill="#64748B" text-anchor="middle">accounts, contacts, deals</text>
+
+  <g stroke="#475569" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" transform="translate(1085,822)">
+    <rect x="3" y="6" width="26" height="19" rx="3"/>
+    <path d="M3,9 l13,9 l13,-9"/>
+  </g>
+  <text x="1101" y="884" font-size="15" font-weight="600" fill="#0F172A" text-anchor="middle">Email and Calendar</text>
+  <text x="1101" y="904" font-size="12.5" fill="#64748B" text-anchor="middle">Microsoft 365</text>
+
+  <g stroke="#475569" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round" transform="translate(1386,822)">
+    <path d="M11,6 L3,15.5 L11,25"/>
+    <path d="M21,6 L29,15.5 L21,25"/>
+  </g>
+  <text x="1402" y="884" font-size="15" font-weight="600" fill="#0F172A" text-anchor="middle">APIs and Services</text>
+  <text x="1402" y="904" font-size="12.5" fill="#64748B" text-anchor="middle">internal and external</text>
+
+  <text x="60" y="958" font-size="13" fill="#94A3B8">Prototype — a thin slice of every layer, with real depth in the knowledge layer. Guardrails apply to every action the coworker takes.</text>
+</svg>

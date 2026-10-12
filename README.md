@@ -21,6 +21,7 @@ Build walkthrough and rationale: [`IMPLEMENTATION.md`](docs/IMPLEMENTATION.md).
 | 4 | LangGraph agent (agent node → tool node → loop) | Built, partially verified |
 | 5 | FastAPI `/chat` endpoint | Built, partially verified |
 | 6 | End-to-end smoke test | Not started |
+| 7 | CI/CD (gates on PR, build → ACR → App Service on merge) | Built, unverified until first run |
 
 ## Prerequisites
 
@@ -152,11 +153,14 @@ listing — a mistyped prefix, a credential that lost its role — would otherwi
 ## Project structure
 
 ```
+├── .github/workflows/ci.yml # quality gates, then build and deploy
+├── Dockerfile               # runtime image for App Service
 ├── docker-compose.yml       # Postgres (PGVector) + Ollama
 ├── init.sql                 # enables the vector extension on first init
 ├── Makefile                 # environment pin and common targets
-├── pyproject.toml           # uv project definition
+├── pyproject.toml           # uv project definition, lint/type/test config
 ├── data/documents/          # ingestion input
+├── tests/                   # unit tests
 └── src/ai_employee/
     ├── config.py            # settings loaded from the environment
     ├── agent/               # LangGraph agent and prompts
@@ -174,6 +178,12 @@ listing — a mistyped prefix, a credential that lost its role — would otherwi
 | `make logs` | Follow container logs |
 | `make api` | Run the FastAPI app with reload |
 | `make ingest` | Run the ingestion pipeline; `SOURCE=` overrides the input |
+| `make lint` | Ruff lint and format check |
+| `make format` | Apply Ruff fixes and formatting |
+| `make typecheck` | Mypy over `src/ai_employee` |
+| `make test` | Run the unit tests |
+| `make check` | Lint, types, and tests — exactly what CI runs |
+| `make docker-build` | Build the runtime image locally |
 
 ## Usage
 
@@ -248,6 +258,97 @@ Retrieval is logged at INFO — the query, hit count, and best score — because
 that is off by default is not an audit trail. Note that this puts search queries and user
 questions in the logs, alongside document content: they inherit the sensitivity of the indexed
 corpus, and need the same retention policy.
+
+## CI/CD
+
+One workflow, [`.github/workflows/ci.yml`](.github/workflows/ci.yml), with two jobs.
+
+| Trigger | What runs |
+|---|---|
+| Pull request to `develop` | `quality`: Ruff lint, Ruff format check, Mypy, pytest |
+| Push to `develop` | `quality`, then `deploy` if it passes |
+
+`deploy` builds the image, pushes it to ACR under two tags, and restarts the web app:
+
+- `dev-latest` — the mutable tag the web app is pinned to.
+- `<commit-sha>` — immutable, so any build can be identified and rolled back to.
+
+Because the web app always points at `dev-latest`, deploying is a push plus a restart: App
+Service re-pulls the tag on restart. To roll back, retag a known-good SHA as `dev-latest`
+and restart again:
+
+```bash
+az acr import --name <registry> --source <registry>.azurecr.io/ai-employee:<sha> \
+  --image ai-employee:dev-latest --force
+az webapp restart --name <webapp> --resource-group <group>
+```
+
+Run the same gates locally before pushing with `make check`.
+
+### Repository configuration
+
+Set these under *Settings → Secrets and variables → Actions*.
+
+| Variable | Example | Purpose |
+|---|---|---|
+| `ACR_NAME` | `aiemployeeacr` | Registry name, without `.azurecr.io` |
+| `AZURE_WEBAPP_NAME` | `ai-employee-dev` | Web app to restart |
+| `AZURE_RESOURCE_GROUP` | `rg-ai-employee` | Its resource group |
+| `AZURE_WEBAPP_URL` | `https://ai-employee-dev.azurewebsites.net` | Optional; enables the post-deploy health check |
+
+| Secret | Purpose |
+|---|---|
+| `AZURE_CLIENT_ID` | App registration used by the federated credential |
+| `AZURE_TENANT_ID` | Directory the app registration lives in |
+| `AZURE_SUBSCRIPTION_ID` | Subscription holding the registry and web app |
+
+### Azure setup
+
+Authentication is OIDC, so no long-lived credential is stored in GitHub. Once, to create
+the app registration and trust this repository:
+
+```bash
+az ad app create --display-name ai-employee-github --query appId -o tsv   # -> APP_ID
+az ad sp create --id "$APP_ID"
+
+az ad app federated-credential create --id "$APP_ID" --parameters '{
+  "name": "develop",
+  "issuer": "https://token.actions.githubusercontent.com",
+  "subject": "repo:gaur-abhay/Enterprise-AI-Workforce-Platform:ref:refs/heads/develop",
+  "audiences": ["api://AzureADTokenExchange"]
+}'
+```
+
+The `deploy` job names the `dev` environment, so add a second federated credential with
+subject `repo:<owner>/<repo>:environment:dev` if you enable environment protection rules.
+
+Grant the service principal only what the pipeline uses:
+
+```bash
+az role assignment create --assignee "$APP_ID" --role AcrPush \
+  --scope $(az acr show --name <registry> --query id -o tsv)
+
+az role assignment create --assignee "$APP_ID" --role "Website Contributor" \
+  --scope $(az webapp show --name <webapp> --resource-group <group> --query id -o tsv)
+```
+
+### Web app settings
+
+The container reads its configuration from the environment — nothing is baked into the
+image. Set the same variables listed under [Configuration](#configuration) as app settings,
+plus:
+
+| Setting | Value | Why |
+|---|---|---|
+| `WEBSITES_PORT` | `8000` | Port the container listens on |
+| `DOCKER_ENABLE_CI` | `false` | The workflow controls deployment; leave ACR webhooks off |
+
+Point the web app at `<registry>.azurecr.io/ai-employee:dev-latest` once, and give it a
+managed identity with `AcrPull` on the registry so it can pull without admin credentials.
+
+> `/health` reports each dependency separately and returns 503 when any is down. The
+> post-deploy step in the workflow prints its response but does not fail on a 503 — a
+> missing `GOOGLE_API_KEY` is a configuration problem, not a failed rollout.
 
 ---
 
