@@ -37,6 +37,52 @@ Or just remove it.
   
 
 
+------Slice 3-------------
+
+
+● Slice 3 is done and committed as 152916b. All 75 tests pass.
+
+  - Ingestion is rebuilt per tenant. make ingest, or TENANT=alpha for one tenant, syncs each tenant's own source into its own rows. Pruning removes only
+    documents from that same source.
+  - Carried over: skipping unchanged files by their change token or content hash, re-indexing when the embedding model changes, and the guard against an empty    listing wiping a source. Tests cover each of these against the real database with a fake embedder.
+  - Changed:
+    - Files are identified relative to the source folder, so moving the folder doesn't re-index everything.
+    - No database transaction stays open during embedding calls.
+    - A first sync moves the tenant from configured to active.
+  - Real run on the dev DB: Beta indexed Doc2.md into 2 chunks, and a second run skipped it. Alpha has nothing indexed: Doc1.pdf has no text layer (probably a
+    scanned PDF), and OCR is out of scope.
+
+
+
+-----Slice 4----------
+
+● I added the Alpha doc and slice 4 is done. It's committed as ff46a36, and all 78 tests pass.
+
+  - Alpha doc: I added data/tenants/alpha/expense-policy.md, an expense policy, and indexed it into 2 chunks. It's gitignored like the rest of the corpus.
+  - Retrieval: knowledge/retrieval.py provides search(ctx, query, top_k). It only returns the caller's tenant's chunks, and only chunks made by the current   
+    embedding model. Each result carries what a citation needs: file name, path, page and score.
+  - Tenant filtering keeps full results: it uses pgvector's iterative scan, so a tenant filter doesn't cut results short when another tenant has many closer      chunks. A test seeds 30 better-matching Beta chunks and checks that Alpha still gets its own.                                         
+  - Live check with real embeddings: each tenant only ever got its own document back.
+
+  ┌────────┬────────────────────────┬──────────────────────────┐
+  │ Tenant │         Query          │         Top hit          │
+  ├────────┼────────────────────────┼──────────────────────────┤
+  │ Alpha  │ hotel cap in London    │ expense-policy.md (0.58) │
+  ├────────┼────────────────────────┼──────────────────────────┤
+  │ Alpha  │ what is Docker Desktop │ expense-policy.md (0.50) │
+  ├────────┼────────────────────────┼──────────────────────────┤
+  │ Beta   │ what is Docker Desktop │ Doc2.md (0.78)           │
+  ├────────┼────────────────────────┼──────────────────────────┤
+  │ Beta   │ hotel cap in London    │ Doc2.md (0.47)           │
+  └────────┴────────────────────────┴──────────────────────────┘
+
+  Off-topic questions still return the nearest passage, at a lower score, because there's no relevance cutoff. Deciding the hits don't answer the question is 
+  left to the agent in slice 6.
+
+  Next is slice 5: the tool registry, the dispatcher (policy, credentials, audit) and search_documents, plus a second migration for the audit table. Shall I  
+  go ahead?
+
+
 ----------------OLD CONTENT ---------------------
 
 # Implementation Notes

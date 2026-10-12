@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import enum
 import uuid
 from datetime import datetime
 
-from sqlalchemy import DateTime, ForeignKey, MetaData, func
+from sqlalchemy import DateTime, Enum, ForeignKey, MetaData, func
 from sqlalchemy.orm import DeclarativeBase, Mapped, declared_attr, mapped_column
 
 # Deterministic constraint names, so migrations can reference them.
@@ -36,3 +37,15 @@ class TenantScoped:
     @declared_attr
     def tenant_id(cls) -> Mapped[uuid.UUID]:
         return mapped_column(ForeignKey("tenants.id", ondelete="CASCADE"), index=True)
+
+
+def str_enum(cls: type[enum.StrEnum], name: str) -> Enum:
+    """Checked string column, not a native PG enum, so adding a value is a plain migration."""
+    return Enum(
+        cls,
+        name=name,
+        native_enum=False,
+        create_constraint=True,
+        length=32,
+        values_callable=lambda e: [m.value for m in e],
+    )

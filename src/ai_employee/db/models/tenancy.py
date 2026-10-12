@@ -9,7 +9,6 @@ from typing import Any
 
 from sqlalchemy import (
     DateTime,
-    Enum,
     ForeignKeyConstraint,
     String,
     Text,
@@ -18,7 +17,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
-from ai_employee.db.models.base import Base, CreatedAt, TenantScoped, UUIDPrimaryKey
+from ai_employee.db.models.base import Base, CreatedAt, TenantScoped, UUIDPrimaryKey, str_enum
 
 
 class TenantStatus(enum.StrEnum):
@@ -38,18 +37,6 @@ class SourceKind(enum.StrEnum):
     AZURE_BLOB = "azure_blob"
 
 
-def _str_enum(cls: type[enum.StrEnum], name: str) -> Enum:
-    # Stored as a checked string, not a native PG enum, so adding a value is a plain migration.
-    return Enum(
-        cls,
-        name=name,
-        native_enum=False,
-        create_constraint=True,
-        length=32,
-        values_callable=lambda e: [m.value for m in e],
-    )
-
-
 class Tenant(UUIDPrimaryKey, CreatedAt, Base):
     __tablename__ = "tenants"
 
@@ -57,7 +44,7 @@ class Tenant(UUIDPrimaryKey, CreatedAt, Base):
     # Entra `tid`; null until the tenant is reached through real sign-in.
     entra_tenant_id: Mapped[str | None] = mapped_column(String(64), unique=True)
     status: Mapped[TenantStatus] = mapped_column(
-        _str_enum(TenantStatus, "tenant_status"), default=TenantStatus.DISCOVERED
+        str_enum(TenantStatus, "tenant_status"), default=TenantStatus.DISCOVERED
     )
 
 
@@ -73,7 +60,7 @@ class User(UUIDPrimaryKey, TenantScoped, CreatedAt, Base):
     display_name: Mapped[str] = mapped_column(String(200))
     # Entra `oid`; null for seeded users.
     entra_object_id: Mapped[str | None] = mapped_column(String(64))
-    role: Mapped[UserRole] = mapped_column(_str_enum(UserRole, "user_role"))
+    role: Mapped[UserRole] = mapped_column(str_enum(UserRole, "user_role"))
 
 
 class Employee(UUIDPrimaryKey, TenantScoped, CreatedAt, Base):
@@ -101,7 +88,7 @@ class SourceConnection(UUIDPrimaryKey, TenantScoped, CreatedAt, Base):
     )
 
     name: Mapped[str] = mapped_column(String(200))
-    kind: Mapped[SourceKind] = mapped_column(_str_enum(SourceKind, "source_kind"))
+    kind: Mapped[SourceKind] = mapped_column(str_enum(SourceKind, "source_kind"))
     # Non-secret settings: path, container, prefix.
     config: Mapped[dict[str, Any]] = mapped_column(JSONB, default=dict)
     # Vault reference for the source credential. Never the secret itself.
