@@ -5,7 +5,7 @@ export UV_PROJECT_ENVIRONMENT := /home/abhay/.virtualenvs/general
 # Local image name only; CI tags against the registry in vars.ACR_NAME.
 IMAGE_NAME := ai-employee
 
-.PHONY: install up down logs migrate
+.PHONY: install up down logs migrate seed
 
 install:
 	uv sync
@@ -21,6 +21,9 @@ logs:
 
 migrate:
 	uv run alembic upgrade head
+
+seed:
+	uv run python -m ai_employee.cli.seed
 
 # --- Quality gates. `make check` is exactly what CI runs. ---
 .PHONY: lint format typecheck test check docker-build

@@ -1,3 +1,35 @@
+# New Implementation details
+
+These are in bit high level not too detailed.  Ignore the old one, unless something need to be taken from it.
+Or just remove it.
+
+--Slice 1---
+
+  What's in it
+- Tables: tenants, users, employees and knowledge-source connections, plus documents and chunks. Every table has tenant_id, documents and chunks also have  
+  acl_principals, and tenant status and user roles are real columns.
+- Tenant boundaries in the schema itself: a chunk can't point at another tenant's document, and a document can't point at another tenant's source.
+- RLS that actually applies: your local Postgres user is a superuser, and superusers skip RLS entirely. So each tenant session switches to a separate
+  unprivileged role (ai_employee_app) and binds the tenant ID, both for that transaction only. A session that never sets a tenant sees zero rows.
+- Two ways in: tenant_session(tenant_id) for normal app code, and admin_session() for seeding and operations, named so it's obviously the exception.
+- Alembic baseline migration, plus make migrate.
+- TurnContext in context.py, with the shape from SCOPE.md.
+- Seam 4 tests: a tenant sees only its own rows in all six tables, can't insert or update another tenant's rows, and can't link a chunk across tenants.
+  Another test fails if the migration and the models drift apart. They run against a separate ai_employee_test database, which is recreated on each run and
+  refused unless its name ends in _test.
+
+  Things to know
+- Old modules deleted: I removed the old retrieval, ingest pipeline, agent, tools and API modules now rather than leaving broken imports for several slices.
+  They're in git history. Until slice 7 the app has no entry point, so the Dockerfile's start command points at a file that no longer exists. That's        
+  harmless while the deploy job is disabled.
+- .env changed: I added a TEST_DATABASE_URL line to your .env, using the same credentials pointed at ai_employee_test. .env.example documents it.
+- CI doesn't run the database tests: CI has no Postgres, so those tests are skipped there. Adding a pgvector service to the CI job would let the isolation
+  test run on every push, whenever you want CI updated.
+
+
+
+----------------OLD CONTENT ---------------------
+
 # Implementation Notes
 
 Companion to [`AI_Employee_Documentation.md`](AI_Employee_Documentation.md). The master
