@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from ai_employee.ingestion.loaders import LoadedDocument
+from ai_employee.knowledge.loaders import LoadedDocument
 
 CHUNK_SIZE = 1000
 CHUNK_OVERLAP = 150
@@ -16,7 +16,7 @@ MIN_CHUNK_CHARS = 120
 
 
 @dataclass(frozen=True)
-class Chunk:
+class Passage:
     index: int
     content: str
     page_number: int | None
@@ -54,12 +54,12 @@ def _merge_undersized(texts: list[str]) -> list[str]:
     return merged
 
 
-def chunk(document: LoadedDocument) -> list[Chunk]:
+def chunk(document: LoadedDocument) -> list[Passage]:
     """Split page by page so a chunk never straddles a page boundary."""
     splitter = _splitter()
-    chunks: list[Chunk] = []
+    chunks: list[Passage] = []
     for page in document.pages:
         texts = [text.strip() for text in splitter.split_text(page.text)]
         for text in _merge_undersized([text for text in texts if text]):
-            chunks.append(Chunk(index=len(chunks), content=text, page_number=page.number))
+            chunks.append(Passage(index=len(chunks), content=text, page_number=page.number))
     return chunks

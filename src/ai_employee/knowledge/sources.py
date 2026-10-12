@@ -16,7 +16,8 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Protocol
 
 from ai_employee.config import get_settings
-from ai_employee.ingestion.loaders import SUPPORTED_SUFFIXES, discover
+from ai_employee.db.models import SourceConnection, SourceKind
+from ai_employee.knowledge.loaders import SUPPORTED_SUFFIXES, discover
 
 if TYPE_CHECKING:
     # Imported lazily at runtime inside _client, so a missing SDK fails with a
@@ -40,8 +41,8 @@ def _etag(properties: object) -> str | None:
 
 @dataclass(frozen=True)
 class SourceItem:
-    # Stable, globally unique identity. Stored as documents.source_path, so it is also the
-    # dedupe key across re-ingestion runs.
+    # Stable identity within the source connection. Stored as documents.source_path, so it
+    # is also the dedupe key across re-ingestion runs.
     uri: str
     # Provider-native locator: an absolute path locally, a blob name in Azure.
     key: str
@@ -67,10 +68,6 @@ class Source(Protocol):
     def label(self) -> str:
         """Human-readable description of what this source points at."""
 
-    @property
-    def uri_prefix(self) -> str:
-        """URI prefix covering exactly what list_items() can return. Bounds pruning."""
-
     def list_items(self) -> list[SourceItem]:
         """Every supported document available from this source."""
 
@@ -88,22 +85,22 @@ class LocalSource:
     def label(self) -> str:
         return str(self.root)
 
-    @property
-    def uri_prefix(self) -> str:
-        # discover() recurses into a directory but returns a file root unchanged, so the
-        # trailing separator is what keeps /data/doc.md from covering /data/documents/.
-        return str(self.root) if self.root.is_file() else f"{self.root}/"
-
     @staticmethod
     def _version(path: Path) -> str:
         stat = path.stat()
         return f"{stat.st_mtime_ns}:{stat.st_size}"
 
+    def _uri(self, path: Path) -> str:
+        # Relative, so the index survives the directory being moved or mounted elsewhere.
+        return path.name if self.root.is_file() else path.relative_to(self.root).as_posix()
+
     def list_items(self) -> list[SourceItem]:
         if not self.root.exists():
             raise SourceConfigError(f"{self.root} does not exist")
         return [
-            SourceItem(uri=str(path), key=str(path), name=path.name, version=self._version(path))
+            SourceItem(
+                uri=self._uri(path), key=str(path), name=path.name, version=self._version(path)
+            )
             for path in discover(self.root)
         ]
 
@@ -159,17 +156,6 @@ class AzureBlobSource:
             credential=DefaultAzureCredential(),
         )
 
-    def _uri(self, blob_name: str) -> str:
-        # The account is part of the identity: the same container name in two storage
-        # accounts holds different documents.
-        return f"{AZURE_SCHEME}{self._client.account_name}/{self.container}/{blob_name}"
-
-    @property
-    def uri_prefix(self) -> str:
-        # Mirrors name_starts_with exactly, so this covers every URI the listing can produce
-        # and nothing outside it.
-        return self._uri(self.prefix)
-
     def list_items(self) -> list[SourceItem]:
         client = self._client
         try:
@@ -187,7 +173,7 @@ class AzureBlobSource:
                 continue
             items.append(
                 SourceItem(
-                    uri=self._uri(blob.name),
+                    uri=blob.name,
                     key=blob.name,
                     name=name,
                     version=_etag(blob),
@@ -212,17 +198,12 @@ class AzureBlobSource:
             yield Materialized(path=local_path, version=_etag(downloader.properties))
 
 
-def from_spec(spec: str) -> Source:
-    """Build a source from a CLI argument: a filesystem path, or azure://container/prefix.
-
-    With no container in the spec, AZURE_STORAGE_CONTAINER and AZURE_STORAGE_PREFIX are used.
-    """
-    if not spec.startswith(AZURE_SCHEME):
-        return LocalSource(Path(spec))
-
-    settings = get_settings()
-    container, _, prefix = spec[len(AZURE_SCHEME) :].partition("/")
-    container = container or settings.azure_storage_container
-    if not container:
-        raise SourceConfigError(f"no container in '{spec}' and AZURE_STORAGE_CONTAINER is unset")
-    return AzureBlobSource(container=container, prefix=prefix or settings.azure_storage_prefix)
+def source_for(connection: SourceConnection) -> Source:
+    """Build the source a connection row describes."""
+    config = connection.config
+    if connection.kind is SourceKind.DIRECTORY:
+        return LocalSource(Path(config["path"]))
+    if connection.kind is SourceKind.AZURE_BLOB:
+        # The container credential is the app's own until the vault lookup lands.
+        return AzureBlobSource(container=config["container"], prefix=config.get("prefix", ""))
+    raise SourceConfigError(f"unsupported source kind {connection.kind}")

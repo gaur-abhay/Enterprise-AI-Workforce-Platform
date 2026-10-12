@@ -27,6 +27,15 @@ Or just remove it.
   test run on every push, whenever you want CI updated.
 
 
+-----Slice 2-----------
+
+
+- What it does: make seed creates Alpha Corp and Beta Ltd. Each gets an admin, a member, one employee, and a directory source pointing at
+  data/tenants/<slug>. Running it again changes nothing.
+- Dev DB: I ran it on the dev DB, so both tenants are there now.
+- Documents folder: data/tenants/ is gitignored and empty, so the tenants have no documents yet.
+  
+
 
 ----------------OLD CONTENT ---------------------
 

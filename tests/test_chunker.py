@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from ai_employee.ingestion.chunker import CHUNK_SIZE, MIN_CHUNK_CHARS, _merge_undersized, chunk
-from ai_employee.ingestion.loaders import LoadedDocument, Page
+from ai_employee.knowledge.chunking import CHUNK_SIZE, MIN_CHUNK_CHARS, _merge_undersized, chunk
+from ai_employee.knowledge.loaders import LoadedDocument, Page
 
 
 def document(*pages: Page) -> LoadedDocument:

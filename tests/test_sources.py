@@ -7,12 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from ai_employee.ingestion.sources import (
+from ai_employee.db.models import SourceConnection, SourceKind
+from ai_employee.knowledge.sources import (
     AzureBlobSource,
     LocalSource,
     SourceConfigError,
     _etag,
-    from_spec,
+    source_for,
 )
 
 
@@ -38,17 +39,21 @@ class TestEtag:
 
 
 class TestLocalSource:
-    def test_directory_prefix_ends_with_a_separator(self, tmp_path: Path) -> None:
-        source = LocalSource(tmp_path)
+    def test_uris_are_relative_to_the_root(self, tmp_path: Path) -> None:
+        (tmp_path / "policies").mkdir()
+        (tmp_path / "policies" / "refunds.md").write_text("content", encoding="utf-8")
 
-        # Without the trailing separator, /data/doc would also cover /data/documents/.
-        assert source.uri_prefix == f"{tmp_path.resolve()}/"
+        [item] = LocalSource(tmp_path).list_items()
 
-    def test_file_prefix_is_the_path_itself(self, tmp_path: Path) -> None:
+        # Relative, so moving the directory does not re-index everything as new documents.
+        assert item.uri == "policies/refunds.md"
+        assert item.key == str(tmp_path.resolve() / "policies" / "refunds.md")
+
+    def test_a_file_root_uses_its_name(self, tmp_path: Path) -> None:
         path = tmp_path / "doc.md"
         path.write_text("content", encoding="utf-8")
 
-        assert LocalSource(path).uri_prefix == str(path.resolve())
+        assert [item.uri for item in LocalSource(path).list_items()] == ["doc.md"]
 
     def test_label_is_the_resolved_root(self, tmp_path: Path) -> None:
         assert LocalSource(tmp_path).label == str(tmp_path.resolve())
@@ -78,51 +83,29 @@ class TestAzureBlobSourceLabel:
         assert AzureBlobSource("contracts").label == "azure://contracts"
 
 
-class TestFromSpec:
-    def test_bare_path_is_a_local_source(self, tmp_path: Path) -> None:
-        source = from_spec(str(tmp_path))
+class TestSourceFor:
+    def test_directory_connection_is_a_local_source(self, tmp_path: Path) -> None:
+        connection = SourceConnection(kind=SourceKind.DIRECTORY, config={"path": str(tmp_path)})
+
+        source = source_for(connection)
 
         assert isinstance(source, LocalSource)
         assert source.root == tmp_path.resolve()
 
-    def test_azure_spec_splits_container_and_prefix(self) -> None:
-        source = from_spec("azure://contracts/policies/2024")
+    def test_blob_connection_carries_container_and_prefix(self) -> None:
+        connection = SourceConnection(
+            kind=SourceKind.AZURE_BLOB, config={"container": "contracts", "prefix": "policies"}
+        )
+
+        source = source_for(connection)
 
         assert isinstance(source, AzureBlobSource)
-        assert source.container == "contracts"
-        assert source.prefix == "policies/2024"
+        assert (source.container, source.prefix) == ("contracts", "policies")
 
-    def test_azure_spec_without_a_prefix(self) -> None:
-        source = from_spec("azure://contracts")
+    def test_blob_prefix_is_optional(self) -> None:
+        connection = SourceConnection(kind=SourceKind.AZURE_BLOB, config={"container": "c"})
+
+        source = source_for(connection)
 
         assert isinstance(source, AzureBlobSource)
-        assert source.container == "contracts"
         assert source.prefix == ""
-
-    def test_bare_azure_spec_falls_back_to_settings(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("AZURE_STORAGE_CONTAINER", "default-container")
-        monkeypatch.setenv("AZURE_STORAGE_PREFIX", "default-prefix")
-
-        source = from_spec("azure://")
-
-        assert isinstance(source, AzureBlobSource)
-        assert source.container == "default-container"
-        assert source.prefix == "default-prefix"
-
-    def test_spec_container_wins_over_the_configured_default(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv("AZURE_STORAGE_CONTAINER", "default-container")
-
-        source = from_spec("azure://explicit")
-
-        assert isinstance(source, AzureBlobSource)
-        assert source.container == "explicit"
-
-    def test_bare_azure_spec_without_a_configured_container_is_an_error(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv("AZURE_STORAGE_CONTAINER", "")
-
-        with pytest.raises(SourceConfigError, match="AZURE_STORAGE_CONTAINER is unset"):
-            from_spec("azure://")

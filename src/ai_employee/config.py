@@ -62,9 +62,6 @@ class Settings(BaseSettings):
         default="", alias="AZURE_STORAGE_CONNECTION_STRING"
     )
     azure_storage_account_url: str = Field(default="", alias="AZURE_STORAGE_ACCOUNT_URL")
-    # Defaults for the bare `azure://` source spec.
-    azure_storage_container: str = Field(default="", alias="AZURE_STORAGE_CONTAINER")
-    azure_storage_prefix: str = Field(default="", alias="AZURE_STORAGE_PREFIX")
 
     # Applies to the ai_employee logger tree only; third-party loggers stay at WARNING.
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
