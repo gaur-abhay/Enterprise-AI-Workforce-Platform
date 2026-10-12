@@ -83,6 +83,28 @@ Or just remove it.
   go ahead?
 
 
+
+-------Slice 5--------
+
+
+● Slice 5 is done and committed as 256e8f5. All 88 tests pass, and the dev DB is migrated to 0002.
+
+  - Every tool call goes one way: look up the tool, validate the input, check policy, get the credential, run it, record it. The result is always Ok, Error or    PendingApproval.
+  - Policy:
+    - Read-only tools run straight away.
+    - Tools that write are held for approval. That's a constant for now, until per-tenant policy exists.
+    - Irreversible tools are always held. A test checks this still holds when the policy is set to allow writes.
+  - Errors go back to the model as text it can act on. Bad arguments, an unknown tool and a missing credential each return a message. A tool crash returns a
+    generic message, so internal details don't leak to the model.
+  - Audit: a new tool_calls table gets one row per call, whatever the outcome, and only the caller's tenant can see it. The app's database role can add and   
+    read rows but not update or delete them, and a test checks that.
+  - search_documents is the only tool registered.
+  - Live check: an Alpha search returned expense-policy.md and wrote an ok audit row. That call took 4.3s, most likely Gemini's first-call startup.
+
+  Next is slice 6: run_turn(ctx, message), the agent loop calling tools through the dispatcher. Shall I continue?
+
+
+
 ----------------OLD CONTENT ---------------------
 
 # Implementation Notes

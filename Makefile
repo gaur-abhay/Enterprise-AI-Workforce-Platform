@@ -5,7 +5,7 @@ export UV_PROJECT_ENVIRONMENT := /home/abhay/.virtualenvs/general
 # Local image name only; CI tags against the registry in vars.ACR_NAME.
 IMAGE_NAME := ai-employee
 
-.PHONY: install up down logs migrate seed ingest
+.PHONY: install up down logs migrate seed ingest ask
 
 install:
 	uv sync
@@ -28,6 +28,10 @@ seed:
 # TENANT limits the sync to one seed slug, e.g. TENANT=alpha
 ingest:
 	uv run python -m ai_employee.cli.ingest $(if $(TENANT),--tenant $(TENANT))
+
+# make ask Q="..." TENANT=beta
+ask:
+	uv run python -m ai_employee.cli.ask "$(Q)" $(if $(TENANT),--tenant $(TENANT))
 
 # --- Quality gates. `make check` is exactly what CI runs. ---
 .PHONY: lint format typecheck test check docker-build
