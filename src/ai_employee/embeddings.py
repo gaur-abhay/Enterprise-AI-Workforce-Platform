@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import math
+from collections.abc import Callable
 from functools import lru_cache
 from typing import Protocol
 
@@ -80,7 +81,8 @@ class GeminiEmbeddingProvider:
         self._output_dim = settings.gemini_embedding_output_dim
         self._client = GoogleGenerativeAIEmbeddings(
             model=settings.gemini_embedding_model,
-            google_api_key=settings.google_api_key,
+            # Accepted by alias at runtime; the generated __init__ only names the field.
+            google_api_key=settings.google_api_key,  # type: ignore[call-arg]
         )
 
     @property
@@ -97,7 +99,7 @@ class GeminiEmbeddingProvider:
         return self._client.embed_query(text, task_type=self.QUERY_TASK, **self._extra())
 
 
-_PROVIDERS = {
+_PROVIDERS: dict[str, Callable[[Settings], EmbeddingProvider]] = {
     "ollama": OllamaEmbeddingProvider,
     "gemini": GeminiEmbeddingProvider,
 }

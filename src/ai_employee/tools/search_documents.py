@@ -35,7 +35,7 @@ class SearchDocumentsInput(BaseModel):
         description=(
             "A natural language search query. Should be a focused restatement of what "
             "information is needed, not the user's raw message verbatim. E.g. for "
-            "\"what's our policy on remote work stipends\", use \"remote work stipend "
+            '"what\'s our policy on remote work stipends", use "remote work stipend '
             'policy" rather than the full question.'
         )
     )

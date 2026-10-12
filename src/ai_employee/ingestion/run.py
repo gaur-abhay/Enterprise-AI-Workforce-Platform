@@ -67,9 +67,7 @@ def main(argv: list[str] | None = None) -> int:
             init_schema()
 
         try:
-            results = ingest(
-                source, force=args.force, acl_principals=args.acl, prune=args.prune
-            )
+            results = ingest(source, force=args.force, acl_principals=args.acl, prune=args.prune)
         except SourceConfigError as exc:
             print(f"error: {exc}", file=sys.stderr)
             return 1

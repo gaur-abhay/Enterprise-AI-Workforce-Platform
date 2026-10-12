@@ -13,10 +13,15 @@ from contextlib import AbstractContextManager, contextmanager
 from dataclasses import dataclass
 from functools import cached_property
 from pathlib import Path
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from ai_employee.config import get_settings
 from ai_employee.ingestion.loaders import SUPPORTED_SUFFIXES, discover
+
+if TYPE_CHECKING:
+    # Imported lazily at runtime inside _client, so a missing SDK fails with a
+    # SourceConfigError rather than at import time.
+    from azure.storage.blob import ContainerClient
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +32,7 @@ class SourceConfigError(RuntimeError):
     """Raised when a source is selected but cannot be reached with the current settings."""
 
 
-def _etag(properties) -> str | None:
+def _etag(properties: object) -> str | None:
     """ETag off a BlobProperties, normalised. Absent only on a blob being written."""
     etag = getattr(properties, "etag", None)
     return etag.strip('"') if etag else None
@@ -122,7 +127,7 @@ class AzureBlobSource:
         return f"{AZURE_SCHEME}{self.container}{suffix}"
 
     @cached_property
-    def _client(self):
+    def _client(self) -> ContainerClient:
         """ContainerClient built from whichever credential style is configured."""
         try:
             from azure.storage.blob import ContainerClient
@@ -219,7 +224,5 @@ def from_spec(spec: str) -> Source:
     container, _, prefix = spec[len(AZURE_SCHEME) :].partition("/")
     container = container or settings.azure_storage_container
     if not container:
-        raise SourceConfigError(
-            f"no container in '{spec}' and AZURE_STORAGE_CONTAINER is unset"
-        )
+        raise SourceConfigError(f"no container in '{spec}' and AZURE_STORAGE_CONTAINER is unset")
     return AzureBlobSource(container=container, prefix=prefix or settings.azure_storage_prefix)

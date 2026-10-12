@@ -6,10 +6,12 @@ import logging
 from functools import lru_cache
 from typing import Any
 
-from langchain_core.language_models import BaseChatModel
-from langchain_core.messages import SystemMessage
+from langchain_core.language_models import LanguageModelInput
+from langchain_core.messages import BaseMessage, SystemMessage
+from langchain_core.runnables import Runnable, RunnableConfig
 from langgraph.checkpoint.memory import InMemorySaver
 from langgraph.graph import START, MessagesState, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
 
 from ai_employee.agent.prompts import SYSTEM_PROMPT
@@ -27,7 +29,7 @@ AgentNotConfiguredError = LLMNotConfiguredError
 
 
 @lru_cache
-def _model() -> BaseChatModel:
+def _model() -> Runnable[LanguageModelInput, BaseMessage]:
     """The configured chat model with the tools bound to it."""
     return get_chat_model().bind_tools(ALL_TOOLS)
 
@@ -40,7 +42,7 @@ def agent_node(state: MessagesState) -> dict[str, Any]:
 
 
 @lru_cache
-def build_graph():
+def build_graph() -> CompiledStateGraph:
     """Compile the agent graph. Cached so the checkpointer survives across calls."""
     builder = StateGraph(MessagesState)
     builder.add_node("agent", agent_node)
@@ -56,6 +58,6 @@ def build_graph():
     return builder.compile(checkpointer=InMemorySaver())
 
 
-def config_for(thread_id: str) -> dict[str, Any]:
+def config_for(thread_id: str) -> RunnableConfig:
     """Invocation config. thread_id selects the conversation the checkpointer resumes."""
     return {"configurable": {"thread_id": thread_id}, "recursion_limit": RECURSION_LIMIT}

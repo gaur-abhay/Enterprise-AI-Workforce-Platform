@@ -69,4 +69,5 @@ class Settings(BaseSettings):
 @lru_cache
 def get_settings() -> Settings:
     """Cached accessor so the .env file is parsed once per process."""
-    return Settings()
+    # Required fields are supplied from the environment, not by the caller.
+    return Settings()  # type: ignore[call-arg]

@@ -113,9 +113,7 @@ def chat(request: ChatRequest) -> ChatResponse | JSONResponse:
         result = ask(request.message, thread_id=thread_id)
     except AgentNotConfiguredError as exc:
         logger.error("agent not configured: %s", exc)
-        return JSONResponse(
-            status_code=503, content={"detail": str(exc), "request_id": request_id}
-        )
+        return JSONResponse(status_code=503, content={"detail": str(exc), "request_id": request_id})
     except Exception:
         logger.exception("chat turn failed for thread %s", thread_id)
         return JSONResponse(

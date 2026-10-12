@@ -95,4 +95,6 @@ def discover(root: Path) -> list[Path]:
     """Recursively list supported files under root, or [root] if it is a file."""
     if root.is_file():
         return [root]
-    return sorted(p for p in root.rglob("*") if p.is_file() and p.suffix.lower() in SUPPORTED_SUFFIXES)
+    return sorted(
+        p for p in root.rglob("*") if p.is_file() and p.suffix.lower() in SUPPORTED_SUFFIXES
+    )

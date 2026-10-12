@@ -124,7 +124,7 @@ def _store(
     acl_principals: list[str],
     source_version: str | None,
 ) -> None:
-    document_id = conn.execute(
+    row = conn.execute(
         _UPSERT_DOCUMENT,
         (
             document.uri,
@@ -135,7 +135,12 @@ def _store(
             document.page_count,
             acl_principals,
         ),
-    ).fetchone()[0]
+    ).fetchone()
+    if row is None:
+        # RETURNING on an upsert always yields a row; a None here means the statement
+        # changed shape, and silently indexing it would fail far from the cause.
+        raise RuntimeError(f"upsert returned no document id for {document.uri}")
+    document_id = row[0]
 
     # Re-ingestion replaces the previous chunk set outright; chunk boundaries shift
     # when a document changes, so incremental updates would leave orphans.
@@ -237,7 +242,9 @@ def _prune(source: Source, items: list[SourceItem]) -> list[IngestResult]:
 
     # Chunks go with them via ON DELETE CASCADE.
     return [
-        IngestResult(uri=uri, name=uri.rsplit("/", 1)[-1], status="pruned", detail="removed at source")
+        IngestResult(
+            uri=uri, name=uri.rsplit("/", 1)[-1], status="pruned", detail="removed at source"
+        )
         for (uri,) in rows
     ]
 

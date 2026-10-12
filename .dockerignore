@@ -1,0 +1,29 @@
+# Secrets. Config reaches the container as environment variables, never as a baked file.
+.env
+.env.*
+!.env.example
+
+.git
+.gitignore
+.github
+.idea
+.vscode
+
+# Rebuilt inside the image; copying the host's would shadow it with Linux-incompatible wheels.
+.venv
+**/__pycache__
+**/*.py[cod]
+.pytest_cache
+.mypy_cache
+.ruff_cache
+htmlcov
+.coverage
+
+# Not part of the running service.
+tests
+docs
+data
+docker-compose.yml
+init.sql
+Makefile
+README.md

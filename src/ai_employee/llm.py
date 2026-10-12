@@ -11,6 +11,7 @@ from collections.abc import Callable
 from functools import lru_cache
 
 from langchain_core.language_models import BaseChatModel
+from pydantic import SecretStr
 
 from ai_employee.config import Settings, get_settings
 
@@ -43,7 +44,7 @@ def _build_azure(settings: Settings) -> BaseChatModel:
 
     return AzureChatOpenAI(
         azure_endpoint=settings.azure_openai_endpoint,
-        api_key=settings.azure_openai_api_key,
+        api_key=SecretStr(settings.azure_openai_api_key),
         azure_deployment=settings.azure_openai_deployment,
         api_version=settings.azure_openai_api_version,
         temperature=TEMPERATURE,
@@ -70,7 +71,7 @@ _PROVIDERS: dict[str, tuple[Callable[[Settings], BaseChatModel], dict[str, str],
 def check_config() -> tuple[bool, str]:
     """Readiness of the selected chat provider, for the health endpoint."""
     settings = get_settings()
-    build, required, model_attribute = _PROVIDERS[settings.llm_provider]
+    _, required, model_attribute = _PROVIDERS[settings.llm_provider]
     missing = _missing(settings, required)
     if missing:
         return False, f"{settings.llm_provider}: missing {', '.join(missing)}"

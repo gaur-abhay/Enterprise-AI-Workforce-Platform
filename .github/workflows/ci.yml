@@ -1,0 +1,113 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [develop]
+  push:
+    branches: [develop]
+
+# A second push to the same branch makes the first one irrelevant. Deploys are excluded
+# below, so a cancelled run can never leave a half-finished rollout.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  IMAGE_NAME: ai-employee
+
+jobs:
+  quality:
+    name: Lint, types, tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          cache-dependency-glob: uv.lock
+
+      - name: Install dependencies
+        # --locked fails if uv.lock is stale, so a dependency added without relocking
+        # cannot slip through CI.
+        run: uv sync --locked
+
+      - name: Ruff lint
+        run: uv run ruff check --output-format=github .
+
+      - name: Ruff format
+        run: uv run ruff format --check .
+
+      - name: Mypy
+        run: uv run mypy
+
+      - name: Tests
+        run: uv run pytest
+
+  deploy:
+    name: Build and deploy to dev
+    needs: quality
+    # TEMPORARY: Azure is not provisioned yet, so this job would fail on the login step.
+    # Delete the `false &&` below to re-enable it.
+    if: false && github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    runs-on: ubuntu-latest
+    environment: dev
+    permissions:
+      # Required for the federated credential; azure/login exchanges this for a token.
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Registry login
+        run: az acr login --name "${{ vars.ACR_NAME }}"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          # dev-latest is what the web app is pinned to; the sha tag is the immutable
+          # record that makes a rollback possible.
+          tags: |
+            ${{ vars.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:dev-latest
+            ${{ vars.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          provenance: false
+
+      - name: Restart web app
+        # The tag has not changed, so App Service re-pulls dev-latest on restart.
+        run: |
+          az webapp restart \
+            --name "${{ vars.AZURE_WEBAPP_NAME }}" \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}"
+
+      - name: Wait for the app to come back
+        if: vars.AZURE_WEBAPP_URL != ''
+        # Reports /health rather than gating on it: a 503 means a dependency is
+        # misconfigured, which is worth seeing but is not a failed deployment.
+        run: |
+          url="${{ vars.AZURE_WEBAPP_URL }}/health"
+          for attempt in $(seq 1 30); do
+            code=$(curl -sS -o /tmp/health.json -w '%{http_code}' --max-time 10 "$url" || echo 000)
+            if [ "$code" != "000" ]; then
+              echo "HTTP $code from $url"
+              cat /tmp/health.json
+              exit 0
+            fi
+            echo "attempt $attempt: no response yet"
+            sleep 10
+          done
+          echo "::error::$url never responded after 5 minutes"
+          exit 1

@@ -53,9 +53,14 @@ def _extract_sources(messages: list[BaseMessage]) -> list[dict[str, Any]]:
     for message in messages:
         if not isinstance(message, ToolMessage):
             continue
+        # Some providers return content as a list of blocks rather than a string; the
+        # retrieval tool always emits one JSON string, so anything else is not ours.
+        if not isinstance(message.content, str):
+            logger.debug("tool message %s was not a string", message.tool_call_id)
+            continue
         try:
             payload = json.loads(message.content)
-        except (TypeError, ValueError):
+        except ValueError:
             logger.debug("tool message %s was not JSON", message.tool_call_id)
             continue
         for hit in payload.get("results", []):
@@ -79,7 +84,11 @@ def ask(question: str, thread_id: str = "default") -> AgentAnswer:
         )
 
         messages = state["messages"]
-        tool_calls = [call for m in messages if isinstance(m, AIMessage) for call in m.tool_calls]
+        # dict(), not the ToolCall TypedDict, because these are serialised into the
+        # API response as plain objects.
+        tool_calls = [
+            dict(call) for m in messages if isinstance(m, AIMessage) for call in m.tool_calls
+        ]
         answer = AgentAnswer(
             answer=messages[-1].content,
             sources=_extract_sources(messages),
