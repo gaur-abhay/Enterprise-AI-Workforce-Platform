@@ -5,7 +5,7 @@ export UV_PROJECT_ENVIRONMENT := /home/abhay/.virtualenvs/general
 # Local image name only; CI tags against the registry in vars.ACR_NAME.
 IMAGE_NAME := ai-employee
 
-.PHONY: install up down logs api ingest
+.PHONY: install up down logs migrate
 
 install:
 	uv sync
@@ -19,12 +19,8 @@ down:
 logs:
 	docker compose logs -f
 
-api:
-	uv run uvicorn ai_employee.api.main:app --reload
-
-# SOURCE overrides the default data/documents, e.g. SOURCE=azure://contracts/policies
-ingest:
-	uv run python -m ai_employee.ingestion.run $(SOURCE)
+migrate:
+	uv run alembic upgrade head
 
 # --- Quality gates. `make check` is exactly what CI runs. ---
 .PHONY: lint format typecheck test check docker-build

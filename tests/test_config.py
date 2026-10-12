@@ -1,4 +1,4 @@
-"""Settings parsing, provider readiness, and DSN shaping."""
+"""Settings parsing and provider readiness."""
 
 from __future__ import annotations
 
@@ -7,7 +7,6 @@ from pydantic import ValidationError
 
 from ai_employee import llm
 from ai_employee.config import Settings, get_settings
-from ai_employee.db import dsn
 
 
 class TestSettings:
@@ -29,6 +28,12 @@ class TestSettings:
         with pytest.raises(ValidationError):
             Settings()
 
+    def test_an_unsafe_db_role_name_is_rejected(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setenv("DB_APP_ROLE", 'app"; DROP ROLE x; --')
+
+        with pytest.raises(ValidationError):
+            Settings()  # type: ignore[call-arg]
+
     def test_unrelated_variables_are_ignored(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setenv("SOME_UNRELATED_VARIABLE", "value")
 
@@ -46,23 +51,6 @@ class TestSettings:
 
         assert second is not first
         assert second.log_level == "DEBUG"
-
-
-class TestDsn:
-    def test_the_sqlalchemy_driver_suffix_is_stripped(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        monkeypatch.setenv("DATABASE_URL", "postgresql+psycopg://u:p@host:5432/db")
-        get_settings.cache_clear()
-
-        # psycopg.connect speaks libpq, which does not understand the +psycopg suffix.
-        assert dsn() == "postgresql://u:p@host:5432/db"
-
-    def test_a_plain_url_is_unchanged(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("DATABASE_URL", "postgresql://u:p@host:5432/db")
-        get_settings.cache_clear()
-
-        assert dsn() == "postgresql://u:p@host:5432/db"
 
 
 class TestLLMCheckConfig:

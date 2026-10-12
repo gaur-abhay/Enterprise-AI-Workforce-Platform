@@ -3,6 +3,7 @@ name = "ai-employee"
 version = "0.1.0"
 requires-python = ">=3.12"
 dependencies = [
+    "alembic>=1.20.0",
     "azure-identity>=1.19",
     "azure-storage-blob>=12.24",
     "fastapi>=0.115",

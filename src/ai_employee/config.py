@@ -20,6 +20,11 @@ class Settings(BaseSettings):
 
     # Postgres / PGVector
     database_url: str = Field(alias="DATABASE_URL")
+    # Unprivileged role tenant sessions switch to, so RLS applies even when the connecting
+    # role is a superuser or the table owner. Interpolated into SQL, hence the pattern.
+    db_app_role: str = Field(
+        default="ai_employee_app", alias="DB_APP_ROLE", pattern=r"^[a-z_][a-z0-9_]{0,62}$"
+    )
 
     # Provider selection
     llm_provider: LLMProvider = Field(default="azure_openai", alias="LLM_PROVIDER")
