@@ -5,7 +5,7 @@ export UV_PROJECT_ENVIRONMENT := /home/abhay/.virtualenvs/general
 # Local image name only; CI tags against the registry in vars.ACR_NAME.
 IMAGE_NAME := ai-employee
 
-.PHONY: install up down logs migrate seed ingest ask
+.PHONY: install up down logs migrate seed ingest ask api
 
 install:
 	uv sync
@@ -18,6 +18,9 @@ down:
 
 logs:
 	docker compose logs -f
+
+api:
+	uv run uvicorn ai_employee.api.main:app --reload
 
 migrate:
 	uv run alembic upgrade head

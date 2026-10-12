@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block title %}Sign in · AI Employee{% endblock %}
+{% block content %}
+<header><h1>Sign in</h1><span class="muted">Development login</span></header>
+<form method="post" action="/login" class="card">
+  <label for="user_id">Act as</label>
+  <select id="user_id" name="user_id">
+    {% for id, tenant, name, role in users %}
+    <option value="{{ id }}">{{ tenant }} — {{ name }} ({{ role.value }})</option>
+    {% endfor %}
+  </select>
+  <p><button type="submit">Continue</button></p>
+</form>
+{% if not users %}<p class="muted">No users yet. Run <code>make seed</code>.</p>{% endif %}
+{% endblock %}

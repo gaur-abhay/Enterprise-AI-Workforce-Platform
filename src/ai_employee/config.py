@@ -63,6 +63,9 @@ class Settings(BaseSettings):
     )
     azure_storage_account_url: str = Field(default="", alias="AZURE_STORAGE_ACCOUNT_URL")
 
+    # Signs the web session cookie. The default is only acceptable for local development.
+    session_secret: str = Field(default="dev-insecure-session-secret", alias="SESSION_SECRET")
+
     # Applies to the ai_employee logger tree only; third-party loggers stay at WARNING.
     log_level: str = Field(default="INFO", alias="LOG_LEVEL")
     log_format: LogFormat = Field(default="text", alias="LOG_FORMAT")

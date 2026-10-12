@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block content %}
+<header>
+  <div>
+    <h1>{{ identity.tenant_name }}</h1>
+    <div class="muted">{{ identity.display_name }} · {{ identity.role.value }}</div>
+  </div>
+  <form method="post" action="/logout"><button class="link" type="submit">Sign out</button></form>
+</header>
+<div id="turns"></div>
+<form hx-post="/chat" hx-target="#turns" hx-swap="beforeend" hx-disabled-elt="find button"
+      hx-on::after-request="if (event.detail.successful) this.reset()" class="card">
+  <textarea name="message" rows="3" required maxlength="4000" placeholder="Ask about your organisation's documents"></textarea>
+  <p><button type="submit">Ask</button> <span class="htmx-indicator muted">Thinking…</span></p>
+</form>
+{% endblock %}
