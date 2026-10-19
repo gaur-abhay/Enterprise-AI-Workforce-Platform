@@ -19,6 +19,9 @@
     .answer { white-space: pre-wrap; }
     button, select, textarea { font: inherit; }
     button { background: var(--accent); color: #fff; border: 0; border-radius: 6px; padding: 8px 14px; cursor: pointer; }
+    button.secondary { background: none; color: var(--fg); border: 1px solid var(--line); }
+    .quote { border-left: 3px solid var(--line); padding-left: 10px; margin: 8px 0; }
+    .confirm + .confirm { border-top: 1px solid var(--line); margin-top: 8px; }
     button.link { background: none; color: var(--muted); padding: 0; }
     textarea, select { width: 100%; padding: 8px; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--fg); }
     details summary { cursor: pointer; }

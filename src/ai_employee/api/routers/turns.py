@@ -3,25 +3,21 @@
 from __future__ import annotations
 
 import uuid
-from pathlib import Path
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
-from fastapi.templating import Jinja2Templates
 
 from ai_employee.api.identity import DevLogin, Identity, current_identity, optional_identity
 from ai_employee.api.schemas.turns import TaskAccepted, TaskView, TurnRequest
+from ai_employee.api.views import reply_context, templates
 from ai_employee.db.models import TaskStatus, TurnTask
 from ai_employee.execution import queue
 from ai_employee.observability import current_request_id
 
 router = APIRouter()
-templates = Jinja2Templates(directory=Path(__file__).parent.parent / "templates")
 
 CurrentIdentity = Annotated[Identity, Depends(current_identity)]
-
-FINISHED = (TaskStatus.SUCCEEDED, TaskStatus.FAILED)
 
 
 def _enqueue(identity: Identity, message: str) -> uuid.UUID:
@@ -61,13 +57,13 @@ def chat_turn(
     request: Request, identity: CurrentIdentity, message: Annotated[str, Form(max_length=4000)]
 ) -> Response:
     task = _task(identity, _enqueue(identity, message))
-    return templates.TemplateResponse(request, "_turn.html", {"task": task, "finished": FINISHED})
+    return templates.TemplateResponse(request, "_turn.html", reply_context(identity, task))
 
 
 @router.get("/chat/turns/{task_id}", response_class=HTMLResponse)
 def chat_turn_status(request: Request, task_id: uuid.UUID, identity: CurrentIdentity) -> Response:
     task = _task(identity, task_id)
-    return templates.TemplateResponse(request, "_reply.html", {"task": task, "finished": FINISHED})
+    return templates.TemplateResponse(request, "_reply.html", reply_context(identity, task))
 
 
 @router.get("/login", response_class=HTMLResponse)

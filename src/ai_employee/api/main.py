@@ -12,7 +12,7 @@ from sqlalchemy import text
 from starlette.middleware.sessions import SessionMiddleware
 
 from ai_employee import llm
-from ai_employee.api.routers import turns
+from ai_employee.api.routers import approvals, turns
 from ai_employee.config import get_settings
 from ai_employee.db import get_engine
 from ai_employee.observability import configure_logging, request_context
@@ -29,6 +29,7 @@ app.add_middleware(
     SessionMiddleware, secret_key=get_settings().session_secret, same_site="lax", https_only=False
 )
 app.include_router(turns.router)
+app.include_router(approvals.router)
 
 
 @app.middleware("http")

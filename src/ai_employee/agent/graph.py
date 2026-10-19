@@ -6,17 +6,26 @@ import json
 import operator
 from typing import Annotated, Any
 
-from langchain_core.messages import AIMessage, AnyMessage, SystemMessage, ToolMessage
+from langchain_core.messages import AIMessage, AnyMessage, SystemMessage, ToolCall, ToolMessage
 from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.graph.state import CompiledStateGraph
 from langgraph.prebuilt import tools_condition
+from langgraph.types import interrupt
 from typing_extensions import TypedDict
 
 from ai_employee.context import TurnContext
 from ai_employee.llm import get_chat_model
-from ai_employee.tools import Error, Ok, PendingApproval, dispatch, registry
+from ai_employee.tools import (
+    Decision,
+    Error,
+    Ok,
+    PendingApproval,
+    dispatch,
+    needs_approval,
+    registry,
+)
 
 # Two steps per tool round trip; roughly five searches before the loop is cut off.
 RECURSION_LIMIT = 12
@@ -36,10 +45,14 @@ def _tool_message(call_id: str, result: Ok | Error | PendingApproval) -> ToolMes
             return ToolMessage(f"error: {message}", tool_call_id=call_id, status="error")
         case PendingApproval(tool_name, _):
             return ToolMessage(
-                f"{tool_name} requires approval, which is not available yet; "
-                "tell the user the action was not taken.",
+                f"{tool_name} needs the user's confirmation, which this channel cannot "
+                "collect; tell the user the action was not taken.",
                 tool_call_id=call_id,
             )
+
+
+def _call_id(call: ToolCall, index: int) -> str:
+    return call["id"] or f"{call['name']}-{index}"
 
 
 def build_graph(
@@ -55,12 +68,27 @@ def build_graph(
     def run_tools(state: AgentState) -> dict[str, Any]:
         last = state["messages"][-1]
         assert isinstance(last, AIMessage)
+        calls = [(_call_id(c, i), c) for i, c in enumerate(last.tool_calls)]
+
+        decisions: dict[str, Decision] = {}
+        held = [(cid, c) for cid, c in calls if needs_approval(c["name"], c["args"])]
+        if held and checkpointer is not None:
+            # Nothing above this line may have side effects: on resume the node re-runs from
+            # the top, and interrupt() returns the requester's answers instead of pausing.
+            answers = interrupt(
+                [
+                    {"tool_call_id": cid, "tool_name": c["name"], "arguments": c["args"]}
+                    for cid, c in held
+                ]
+            )
+            decisions = {cid: Decision(**answer) for cid, answer in answers.items()}
+
         messages, sources = [], []
-        for call in last.tool_calls:
-            result = dispatch(ctx, call["name"], call["args"])
+        for cid, call in calls:
+            result = dispatch(ctx, call["name"], call["args"], decision=decisions.get(cid))
             if call["name"] == "search_documents" and isinstance(result, Ok):
                 sources.extend(result.value)
-            messages.append(_tool_message(call["id"] or call["name"], result))
+            messages.append(_tool_message(cid, result))
         return {"messages": messages, "sources": sources}
 
     builder = StateGraph(AgentState)

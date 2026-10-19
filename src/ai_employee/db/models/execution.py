@@ -1,4 +1,4 @@
-"""Execution plane: the turn queue and the tool-call audit log."""
+"""Execution plane: turn queue, approvals, outbox and the tool-call audit log."""
 
 from __future__ import annotations
 
@@ -7,7 +7,7 @@ import uuid
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import DateTime, Index, Integer, String, Text
+from sqlalchemy import DateTime, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -48,6 +48,8 @@ class ToolCall(UUIDPrimaryKey, TenantScoped, CreatedAt, Base):
 class TaskStatus(enum.StrEnum):
     QUEUED = "queued"
     RUNNING = "running"
+    # Suspended on an interrupt; requeued once every approval it waits on is decided.
+    AWAITING_APPROVAL = "awaiting_approval"
     SUCCEEDED = "succeeded"
     FAILED = "failed"
 
@@ -80,3 +82,47 @@ class TurnTask(UUIDPrimaryKey, TenantScoped, CreatedAt, Base):
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     result: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     error: Mapped[str | None] = mapped_column(Text)
+
+
+class ApprovalStatus(enum.StrEnum):
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+
+
+class Approval(UUIDPrimaryKey, TenantScoped, CreatedAt, Base):
+    """A held tool call awaiting the requester's confirmation, for exactly these arguments."""
+
+    __tablename__ = "approvals"
+    __table_args__ = (
+        # The worker may record the same suspension twice after a crash.
+        UniqueConstraint("task_id", "tool_call_id"),
+    )
+
+    task_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("turn_tasks.id", ondelete="CASCADE"))
+    # The model's id for the call; how the resumed graph matches a decision to its call.
+    tool_call_id: Mapped[str] = mapped_column(String(100))
+    tool_name: Mapped[str] = mapped_column(String(100))
+    side_effect_class: Mapped[SideEffectClass] = mapped_column(
+        str_enum(SideEffectClass, "side_effect_class")
+    )
+    arguments: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    # Who must confirm: the actor the turn runs for.
+    approver: Mapped[str] = mapped_column(String(64))
+    status: Mapped[ApprovalStatus] = mapped_column(
+        str_enum(ApprovalStatus, "approval_status"), default=ApprovalStatus.PENDING, index=True
+    )
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    reason: Mapped[str | None] = mapped_column(Text)
+
+
+class OutboxMessage(UUIDPrimaryKey, TenantScoped, CreatedAt, Base):
+    """Email the coworker sent. Delivery is stubbed until a mail connection exists."""
+
+    __tablename__ = "outbox_messages"
+
+    recipient: Mapped[str] = mapped_column(String(320))
+    subject: Mapped[str] = mapped_column(String(300))
+    body: Mapped[str] = mapped_column(Text)
+    sent_by: Mapped[str] = mapped_column(String(64))
+    correlation_id: Mapped[str] = mapped_column(String(64))

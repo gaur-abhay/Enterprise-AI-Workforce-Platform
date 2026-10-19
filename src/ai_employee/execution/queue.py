@@ -120,6 +120,16 @@ def complete(task_id: uuid.UUID, worker_id: str, result: dict[str, Any]) -> None
         )
 
 
+def suspend(task_id: uuid.UUID, worker_id: str) -> None:
+    """Release the task until its approvals are decided; no worker holds it meanwhile."""
+    with admin_session() as session:
+        session.execute(
+            update(TurnTask)
+            .where(_owned(task_id, worker_id))
+            .values(status=TaskStatus.AWAITING_APPROVAL, lease_expires_at=None, claimed_by=None)
+        )
+
+
 def fail(task_id: uuid.UUID, worker_id: str, error: str, *, retry: bool) -> None:
     """Record a failure; requeue for another attempt or mark it terminal."""
     terminal = {"status": TaskStatus.FAILED, "finished_at": func.now()}

@@ -41,6 +41,14 @@ class PendingApproval:
 Result = Ok | Error | PendingApproval
 
 
+@dataclass(frozen=True)
+class Decision:
+    """The requester's answer to a held call."""
+
+    approved: bool
+    reason: str | None = None
+
+
 class CredentialUnavailableError(RuntimeError):
     pass
 
@@ -93,14 +101,44 @@ def _audit(
         )
 
 
-def _run(ctx: TurnContext, declaration: ToolDeclaration, arguments: dict[str, Any]) -> Result:
+def audit(ctx: TurnContext, name: str, arguments: dict[str, Any], result: Result) -> None:
+    """Record an outcome decided outside dispatch, such as a call held for confirmation."""
+    _audit(ctx, name, registry.get(name), arguments, result, time.monotonic())
+
+
+def _validate(declaration: ToolDeclaration, arguments: dict[str, Any]) -> Any:
+    return declaration.input_model.model_validate(arguments)
+
+
+def needs_approval(name: str, arguments: dict[str, Any]) -> bool:
+    """Pure policy check, safe to run before a suspension. Invalid calls are not held."""
+    declaration = registry.get(name)
+    if declaration is None or not requires_approval(declaration):
+        return False
     try:
-        validated = declaration.input_model.model_validate(arguments)
+        _validate(declaration, arguments)
+    except ValidationError:
+        return False
+    return True
+
+
+def _run(
+    ctx: TurnContext,
+    declaration: ToolDeclaration,
+    arguments: dict[str, Any],
+    decision: Decision | None,
+) -> Result:
+    try:
+        validated = _validate(declaration, arguments)
     except ValidationError as exc:
         return Error(f"invalid arguments for {declaration.name}: {exc.errors(include_url=False)}")
 
     if requires_approval(declaration):
-        return PendingApproval(tool_name=declaration.name, arguments=arguments)
+        if decision is None:
+            return PendingApproval(tool_name=declaration.name, arguments=arguments)
+        if not decision.approved:
+            detail = f": {decision.reason}" if decision.reason else ""
+            return Error(f"the user declined {declaration.name}{detail}; it was not run")
 
     try:
         credential = resolve_credential(ctx, declaration)
@@ -112,10 +150,20 @@ def _run(ctx: TurnContext, declaration: ToolDeclaration, arguments: dict[str, An
         return Error(f"{declaration.name} failed unexpectedly; try again or answer without it")
 
 
-def dispatch(ctx: TurnContext, name: str, arguments: dict[str, Any]) -> Result:
-    """Run one tool call and record it, whatever the outcome."""
+def dispatch(
+    ctx: TurnContext, name: str, arguments: dict[str, Any], *, decision: Decision | None = None
+) -> Result:
+    """Run one tool call and record it, whatever the outcome.
+
+    A call that needs approval returns PendingApproval unless `decision` carries the
+    requester's answer, in which case it runs (approved) or is declined, and is audited.
+    """
     started = time.monotonic()
     declaration = registry.get(name)
-    result = _run(ctx, declaration, arguments) if declaration else Error(f"unknown tool {name!r}")
+    result = (
+        _run(ctx, declaration, arguments, decision)
+        if declaration
+        else Error(f"unknown tool {name!r}")
+    )
     _audit(ctx, name, declaration, arguments, result, started)
     return result

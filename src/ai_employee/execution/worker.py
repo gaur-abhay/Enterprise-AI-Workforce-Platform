@@ -20,14 +20,14 @@ from typing import Any
 
 from langgraph.checkpoint.base import BaseCheckpointSaver
 
-from ai_employee.agent import TurnResult, run_turn
-from ai_employee.execution import queue
+from ai_employee.agent import TurnOutcome, TurnSuspended, run_turn
+from ai_employee.execution import approvals, queue
 from ai_employee.execution.checkpointer import open_checkpointer
 from ai_employee.observability import configure_logging, request_context
 
 logger = logging.getLogger(__name__)
 
-RunTurn = Callable[..., TurnResult]
+RunTurn = Callable[..., TurnOutcome]
 
 
 class Worker:
@@ -77,20 +77,28 @@ class Worker:
                 return True
 
             logger.info("task %s claimed (attempt %d)", task.id, task.attempts)
+            ctx = queue.context_for(task)
             try:
                 with self._heartbeat(task.id):
                     result = self.run(
-                        queue.context_for(task),
+                        ctx,
                         task.message,
                         checkpointer=checkpointer,
                         thread_id=str(task.id),
+                        decisions=approvals.decisions_for(task),
                     )
+                if isinstance(result, TurnSuspended):
+                    approvals.record(task, ctx, result.requests)
             except Exception as exc:
                 retry = task.attempts < queue.MAX_ATTEMPTS
                 logger.exception("task %s failed (retry=%s)", task.id, retry)
                 queue.fail(task.id, self.worker_id, f"{type(exc).__name__}: {exc}", retry=retry)
                 return True
 
+            if isinstance(result, TurnSuspended):
+                queue.suspend(task.id, self.worker_id)
+                logger.info("task %s awaiting %d confirmation(s)", task.id, len(result.requests))
+                return True
             queue.complete(task.id, self.worker_id, dataclasses.asdict(result))
             logger.info("task %s succeeded", task.id)
         return True

@@ -13,7 +13,7 @@ from ai_employee.cli.seed import TenantSeed, seed_tenant
 from ai_employee.context import TurnContext
 from ai_employee.db import admin_session, tenant_session
 from ai_employee.db.models import Employee, SideEffectClass, ToolCall, ToolOutcome
-from ai_employee.tools import Error, Ok, PendingApproval, dispatch, dispatcher, registry
+from ai_employee.tools import Decision, Error, Ok, PendingApproval, dispatch, dispatcher, registry
 from ai_employee.tools import search_documents as search_tool
 from ai_employee.tools.registry import ToolDeclaration
 
@@ -151,3 +151,28 @@ def test_search_documents_goes_through_the_dispatcher(
     assert dispatch(ctx, "search_documents", {"query": "refunds", "top_k": 3}) == Ok([])
     assert seen == [("refunds", 3)]
     assert _audit(ctx)[0].side_effect_class is SideEffectClass.READ
+
+
+def test_an_approved_call_runs(ctx: TurnContext, tool: Any) -> None:
+    recorder = tool(SideEffectClass.WRITE)
+
+    assert dispatch(ctx, "echo", {"text": "x"}, decision=Decision(approved=True)) == Ok("X")
+    assert recorder.calls == ["x"]
+
+
+def test_a_declined_call_does_not_run(ctx: TurnContext, tool: Any) -> None:
+    recorder = tool(SideEffectClass.WRITE)
+
+    result = dispatch(ctx, "echo", {"text": "x"}, decision=Decision(approved=False, reason="no"))
+
+    assert isinstance(result, Error) and "declined echo: no" in result.message
+    assert recorder.calls == []
+    assert _audit(ctx)[0].outcome is ToolOutcome.ERROR
+
+
+def test_invalid_held_calls_are_not_sent_for_approval(tool: Any) -> None:
+    tool(SideEffectClass.WRITE)
+
+    assert dispatcher.needs_approval("echo", {"text": "x"}) is True
+    assert dispatcher.needs_approval("echo", {"wrong": 1}) is False
+    assert dispatcher.needs_approval("nope", {}) is False

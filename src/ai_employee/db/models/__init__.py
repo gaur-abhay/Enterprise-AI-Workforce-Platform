@@ -2,6 +2,9 @@
 
 from ai_employee.db.models.base import Base
 from ai_employee.db.models.execution import (
+    Approval,
+    ApprovalStatus,
+    OutboxMessage,
     SideEffectClass,
     TaskStatus,
     ToolCall,
@@ -20,10 +23,13 @@ from ai_employee.db.models.tenancy import (
 )
 
 __all__ = [
+    "Approval",
+    "ApprovalStatus",
     "Base",
     "Chunk",
     "Document",
     "Employee",
+    "OutboxMessage",
     "SideEffectClass",
     "SourceConnection",
     "SourceKind",

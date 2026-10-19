@@ -15,6 +15,30 @@
   <div class="answer">Something went wrong answering this. Reference: {{ task.correlation_id }}</div>
   {% endif %}
 </div>
+{% elif pending %}
+<div class="card" hx-get="/chat/turns/{{ task.id }}" hx-trigger="every 5s" hx-swap="outerHTML">
+  <div class="muted">Coworker · needs your confirmation</div>
+  {% for a in pending %}
+  <div class="confirm">
+    {% if a.tool_name == "send_email" %}
+    <p>I'd like to send this email:</p>
+    <p class="muted">To <strong>{{ a.arguments.to }}</strong> · {{ a.arguments.subject }}</p>
+    <div class="answer quote">{{ a.arguments.body }}</div>
+    {% else %}
+    <p>I'd like to run <strong>{{ a.tool_name }}</strong>:</p>
+    <pre class="quote">{{ a.arguments | tojson(indent=2) }}</pre>
+    {% endif %}
+    {% if can_decide %}
+    <p>
+      <button hx-post="/chat/approvals/{{ a.id }}/approve" hx-target="closest .card" hx-swap="outerHTML">Send</button>
+      <button class="secondary" hx-post="/chat/approvals/{{ a.id }}/reject" hx-target="closest .card" hx-swap="outerHTML">Don't send</button>
+    </p>
+    {% else %}
+    <p class="muted">Waiting for the person who asked to confirm.</p>
+    {% endif %}
+  </div>
+  {% endfor %}
+</div>
 {% else %}
 <div class="card" hx-get="/chat/turns/{{ task.id }}" hx-trigger="load delay:1s" hx-swap="outerHTML">
   <div class="muted">Coworker</div>

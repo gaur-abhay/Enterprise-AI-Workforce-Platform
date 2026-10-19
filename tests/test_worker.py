@@ -129,7 +129,7 @@ def test_turn_resumes_from_its_checkpoint_after_a_crash(
     monkeypatch.setattr(graph, "get_chat_model", lambda: model)
     calls = {"n": 0}
 
-    def flaky_dispatch(*_: Any) -> Ok:
+    def flaky_dispatch(*_: Any, **__: Any) -> Ok:
         calls["n"] += 1
         if calls["n"] == 1:
             raise SystemExit("worker killed mid-tool")

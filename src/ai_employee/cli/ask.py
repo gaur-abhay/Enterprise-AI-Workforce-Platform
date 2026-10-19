@@ -7,7 +7,7 @@ import uuid
 
 from sqlalchemy import select
 
-from ai_employee.agent import run_turn
+from ai_employee.agent import TurnSuspended, run_turn
 from ai_employee.context import TurnContext
 from ai_employee.db import admin_session
 from ai_employee.db.models import Employee, Tenant, User, UserRole
@@ -39,6 +39,9 @@ def main() -> None:
 
     configure_logging()
     result = run_turn(_context(args.tenant), args.question)
+    # Without a checkpointer a turn cannot pause, so held calls are declined, not suspended.
+    if isinstance(result, TurnSuspended):
+        raise SystemExit("turn needs confirmation; use the chat page or API")
     print(result.answer)
     for source in result.sources:
         print(f"  [{source['score']:.3f}] {source['uri']} #{source['chunk_index']}")
