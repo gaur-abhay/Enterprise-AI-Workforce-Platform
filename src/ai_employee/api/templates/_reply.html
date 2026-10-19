@@ -17,6 +17,7 @@
 </div>
 {% else %}
 <div class="card" hx-get="/chat/turns/{{ task.id }}" hx-trigger="load delay:1s" hx-swap="outerHTML">
-  <div class="muted">Coworker · {{ task.status.value }}…</div>
+  <div class="muted">Coworker</div>
+  <div class="typing" role="status" aria-label="Coworker is typing"><span></span><span></span><span></span></div>
 </div>
 {% endif %}
