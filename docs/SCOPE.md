@@ -304,6 +304,18 @@ Three layers, in precedence order:
 3. **Agent judgement** — the agent may escalate and ask for approval where policy does not
    require it. It can only ever be more cautious than policy, never less.
 
+The layers decide *whether* a tool call needs approval. *Who* approves is separate, and the
+default is the **requester**: the coworker asks the person it is acting for to confirm, in the
+conversation, before it acts — the Viktor model. Approval is a confirmation from the user, not
+a request to an admin on the user's behalf.
+
+Admins act on the **configuration** side instead: tenant policy decides which action classes
+need confirmation at all, and may later route specific classes to a designated approver. A
+scheduled run has no requester present, so its approver is the schedule's owner (pass F).
+
+Agreed 2026-10-19. The decision applies to exactly the arguments shown; a changed call is a
+new request.
+
 ## Evaluation
 
 In scope, because without it every chunking decision is an opinion. The reason it belongs
@@ -407,7 +419,7 @@ The two constraints worth knowing when choosing an order:
 
 ## Deferred to build time
 
-- Self-approval rules and approval timeout semantics.
+- Approval timeout semantics. (Who approves is resolved: the requester — see Approval.)
 - Ingestion trigger: queued rather than in-request, reusing the worker.
 - **Pass E only** — which provider backs the per-user OAuth action tool. Microsoft Graph is
   the right product integration, but the on-behalf-of exchange from a Teams bot is the
