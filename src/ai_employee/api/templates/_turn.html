@@ -1,16 +1,5 @@
 <div class="card">
   <div class="muted">You</div>
-  <div class="answer">{{ message }}</div>
+  <div class="answer">{{ task.message }}</div>
 </div>
-<div class="card">
-  <div class="muted">Coworker · <span title="correlation id">{{ request_id }}</span></div>
-  <div class="answer">{{ result.answer }}</div>
-  {% if result.sources %}
-  <details>
-    <summary class="muted">{{ result.sources | length }} passage(s) retrieved</summary>
-    {% for s in result.sources %}
-    <p class="muted"><strong>{{ s.source }}</strong>{% if s.page %} p{{ s.page }}{% endif %} · #{{ s.chunk_index }} · {{ "%.3f" | format(s.score) }}</p>
-    {% endfor %}
-  </details>
-  {% endif %}
-</div>
+{% include "_reply.html" %}

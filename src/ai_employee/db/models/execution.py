@@ -1,13 +1,14 @@
-"""Execution plane: the tool-call audit log."""
+"""Execution plane: the turn queue and the tool-call audit log."""
 
 from __future__ import annotations
 
 import enum
 import uuid
+from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Integer, String, Text
-from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy import DateTime, Index, Integer, String, Text
+from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.orm import Mapped, mapped_column
 
 from ai_employee.db.models.base import Base, CreatedAt, TenantScoped, UUIDPrimaryKey, str_enum
@@ -42,3 +43,40 @@ class ToolCall(UUIDPrimaryKey, TenantScoped, CreatedAt, Base):
     outcome: Mapped[ToolOutcome] = mapped_column(str_enum(ToolOutcome, "tool_outcome"))
     error: Mapped[str | None] = mapped_column(Text)
     duration_ms: Mapped[int] = mapped_column(Integer)
+
+
+class TaskStatus(enum.StrEnum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    SUCCEEDED = "succeeded"
+    FAILED = "failed"
+
+
+class TurnTask(UUIDPrimaryKey, TenantScoped, CreatedAt, Base):
+    """One queued agent turn. Its id is also the checkpointer thread id."""
+
+    __tablename__ = "turn_tasks"
+    __table_args__ = (
+        # Serves the claim query: oldest claimable task first.
+        Index("ix_turn_tasks_claimable", "status", "created_at"),
+    )
+
+    employee_id: Mapped[uuid.UUID] = mapped_column()
+    actor: Mapped[str] = mapped_column(String(64))
+    trigger: Mapped[str] = mapped_column(String(16))
+    correlation_id: Mapped[str] = mapped_column(String(64))
+    actor_principals: Mapped[list[str]] = mapped_column(ARRAY(Text), default=list)
+    conversation_ref: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    message: Mapped[str] = mapped_column(Text)
+
+    status: Mapped[TaskStatus] = mapped_column(
+        str_enum(TaskStatus, "task_status"), default=TaskStatus.QUEUED
+    )
+    attempts: Mapped[int] = mapped_column(Integer, default=0)
+    claimed_by: Mapped[str | None] = mapped_column(String(100))
+    # A running task whose lease has passed is presumed abandoned and may be reclaimed.
+    lease_expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    result: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    error: Mapped[str | None] = mapped_column(Text)

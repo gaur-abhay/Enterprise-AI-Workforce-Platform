@@ -7,6 +7,7 @@ import operator
 from typing import Annotated, Any
 
 from langchain_core.messages import AIMessage, AnyMessage, SystemMessage, ToolMessage
+from langgraph.checkpoint.base import BaseCheckpointSaver
 from langgraph.graph import START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.graph.state import CompiledStateGraph
@@ -41,7 +42,9 @@ def _tool_message(call_id: str, result: Ok | Error | PendingApproval) -> ToolMes
             )
 
 
-def build_graph(ctx: TurnContext, system_prompt: str) -> CompiledStateGraph[Any]:
+def build_graph(
+    ctx: TurnContext, system_prompt: str, checkpointer: BaseCheckpointSaver[Any] | None = None
+) -> CompiledStateGraph[Any]:
     """Compile a graph bound to one turn's context."""
     tools = registry.available(ctx)
     model = get_chat_model().bind_tools([t.spec() for t in tools])
@@ -66,4 +69,4 @@ def build_graph(ctx: TurnContext, system_prompt: str) -> CompiledStateGraph[Any]
     builder.add_edge(START, "agent")
     builder.add_conditional_edges("agent", tools_condition)
     builder.add_edge("tools", "agent")
-    return builder.compile()
+    return builder.compile(checkpointer=checkpointer)

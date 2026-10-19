@@ -87,4 +87,5 @@ def database() -> Iterator[str]:
 def clean_db(database: str) -> Iterator[None]:
     yield
     with admin_session() as session:
-        session.execute(text("TRUNCATE tenants CASCADE"))
+        # DELETE cascades through the foreign keys; cheaper than TRUNCATE for a few rows.
+        session.execute(text("DELETE FROM tenants"))

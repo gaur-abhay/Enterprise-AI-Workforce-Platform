@@ -1,0 +1,22 @@
+{% if task.status in finished %}
+<div class="card">
+  <div class="muted">Coworker · <span title="correlation id">{{ task.correlation_id }}</span></div>
+  {% if task.result %}
+  <div class="answer">{{ task.result.answer }}</div>
+  {% if task.result.sources %}
+  <details>
+    <summary class="muted">{{ task.result.sources | length }} passage(s) retrieved</summary>
+    {% for s in task.result.sources %}
+    <p class="muted"><strong>{{ s.source }}</strong>{% if s.page %} p{{ s.page }}{% endif %} · #{{ s.chunk_index }} · {{ "%.3f" | format(s.score) }}</p>
+    {% endfor %}
+  </details>
+  {% endif %}
+  {% else %}
+  <div class="answer">Something went wrong answering this. Reference: {{ task.correlation_id }}</div>
+  {% endif %}
+</div>
+{% else %}
+<div class="card" hx-get="/chat/turns/{{ task.id }}" hx-trigger="load delay:1s" hx-swap="outerHTML">
+  <div class="muted">Coworker · {{ task.status.value }}…</div>
+</div>
+{% endif %}

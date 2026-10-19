@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import uuid
 
 import pytest
@@ -10,11 +11,11 @@ from sqlalchemy import select
 
 from ai_employee.agent import TurnResult
 from ai_employee.api import main
-from ai_employee.api.routers import turns
 from ai_employee.cli.seed import seed
 from ai_employee.context import TurnContext
 from ai_employee.db import admin_session
 from ai_employee.db.models import Tenant, User, UserRole
+from ai_employee.execution.worker import Worker
 
 SOURCE = {
     "chunk_id": "c1",
@@ -31,15 +32,16 @@ SOURCE = {
 
 
 @pytest.fixture
-def seen(monkeypatch: pytest.MonkeyPatch) -> list[TurnContext]:
-    contexts: list[TurnContext] = []
+def seen() -> list[TurnContext]:
+    return []
 
-    def fake_run_turn(ctx: TurnContext, message: str) -> TurnResult:
-        contexts.append(ctx)
+
+def _work(seen: list[TurnContext]) -> None:
+    def fake_run_turn(ctx: TurnContext, message: str, **_: object) -> TurnResult:
+        seen.append(ctx)
         return TurnResult(answer=f"echo: {message}", sources=[SOURCE], tool_calls=[])
 
-    monkeypatch.setattr(turns, "run_turn", fake_run_turn)
-    return contexts
+    assert Worker(run=fake_run_turn).run_once(None)
 
 
 @pytest.fixture
@@ -69,32 +71,56 @@ def test_login_page_lists_seeded_users(client: TestClient) -> None:
     assert "Alpha Corp" in body and "Beta Ltd" in body
 
 
-def test_turn_runs_in_the_signed_in_users_tenant(
+def test_turn_is_accepted_then_answered_in_the_users_tenant(
     client: TestClient, seen: list[TurnContext]
 ) -> None:
     user_id, tenant_id = _user("beta", UserRole.MEMBER)
     client.post("/login", data={"user_id": str(user_id)})
 
-    response = client.post(
+    accepted = client.post(
         "/api/turns", json={"message": "hotel cap?"}, headers={"x-request-id": "req-42"}
     )
+    assert accepted.status_code == 202
+    task_id = accepted.json()["task_id"]
+    assert client.get(f"/api/turns/{task_id}").json()["status"] == "queued"
 
-    assert response.status_code == 200
-    body = response.json()
-    assert (body["answer"], body["request_id"]) == ("echo: hotel cap?", "req-42")
-    assert body["sources"][0]["source"] == "policy.md"
+    _work(seen)
+
+    body = client.get(f"/api/turns/{task_id}").json()
+    assert (body["status"], body["request_id"]) == ("succeeded", "req-42")
+    assert body["result"]["answer"] == "echo: hotel cap?"
+    assert body["result"]["sources"][0]["source"] == "policy.md"
     [ctx] = seen
     assert (ctx.tenant_id, ctx.actor, ctx.correlation_id) == (tenant_id, user_id, "req-42")
 
 
-def test_chat_page_renders_a_turn(client: TestClient, seen: list[TurnContext]) -> None:
+def test_another_tenants_turn_is_not_found(client: TestClient) -> None:
+    alpha_user, _ = _user("alpha", UserRole.MEMBER)
+    beta_user, _ = _user("beta", UserRole.MEMBER)
+    client.post("/login", data={"user_id": str(beta_user)})
+    task_id = client.post("/api/turns", json={"message": "secret"}).json()["task_id"]
+
+    client.post("/login", data={"user_id": str(alpha_user)})
+
+    assert client.get(f"/api/turns/{task_id}").status_code == 404
+
+
+def test_chat_page_polls_until_the_turn_is_done(
+    client: TestClient, seen: list[TurnContext]
+) -> None:
     user_id, _ = _user("alpha", UserRole.ADMIN)
     client.post("/login", data={"user_id": str(user_id)})
 
     assert "Alpha Corp" in client.get("/").text
-    fragment = client.post("/chat", data={"message": "<b>hi</b>"}).text
-    assert "echo: &lt;b&gt;hi&lt;/b&gt;" in fragment
-    assert "policy.md" in fragment
+    pending = client.post("/chat", data={"message": "<b>hi</b>"}).text
+    assert "&lt;b&gt;hi&lt;/b&gt;" in pending
+    [poll_url] = re.findall(r'hx-get="(/chat/turns/[^"]+)"', pending)
+
+    _work(seen)
+
+    reply = client.get(poll_url).text
+    assert "echo: &lt;b&gt;hi&lt;/b&gt;" in reply and "policy.md" in reply
+    assert "hx-get" not in reply
 
 
 def test_unknown_user_cannot_sign_in(client: TestClient) -> None:
@@ -103,7 +129,7 @@ def test_unknown_user_cannot_sign_in(client: TestClient) -> None:
     assert client.post("/api/turns", json={"message": "hi"}).status_code == 401
 
 
-def test_logout_clears_identity(client: TestClient, seen: list[TurnContext]) -> None:
+def test_logout_clears_identity(client: TestClient) -> None:
     user_id, _ = _user("alpha", UserRole.MEMBER)
     client.post("/login", data={"user_id": str(user_id)})
     client.post("/logout")

@@ -6,13 +6,14 @@ import uuid
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, Form, Request
+from fastapi import APIRouter, Depends, Form, HTTPException, Request, status
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.templating import Jinja2Templates
 
-from ai_employee.agent import TurnResult, run_turn
 from ai_employee.api.identity import DevLogin, Identity, current_identity, optional_identity
-from ai_employee.api.schemas.turns import Source, TurnRequest, TurnResponse
+from ai_employee.api.schemas.turns import TaskAccepted, TaskView, TurnRequest
+from ai_employee.db.models import TaskStatus, TurnTask
+from ai_employee.execution import queue
 from ai_employee.observability import current_request_id
 
 router = APIRouter()
@@ -20,22 +21,31 @@ templates = Jinja2Templates(directory=Path(__file__).parent.parent / "templates"
 
 CurrentIdentity = Annotated[Identity, Depends(current_identity)]
 
+FINISHED = (TaskStatus.SUCCEEDED, TaskStatus.FAILED)
 
-def _run(identity: Identity, message: str) -> tuple[str, TurnResult]:
+
+def _enqueue(identity: Identity, message: str) -> uuid.UUID:
     request_id = current_request_id() or uuid.uuid4().hex
-    return request_id, run_turn(identity.turn_context(request_id), message)
+    return queue.enqueue(identity.turn_context(request_id), message)
 
 
-@router.post("/api/turns", response_model=TurnResponse)
-def create_turn(body: TurnRequest, identity: CurrentIdentity) -> TurnResponse:
-    """Run one turn synchronously. Becomes accept-and-enqueue with the worker."""
-    request_id, result = _run(identity, body.message)
-    return TurnResponse(
-        answer=result.answer,
-        request_id=request_id,
-        sources=[Source(**s) for s in result.sources],
-        tool_calls=result.tool_calls,
-    )
+def _task(identity: Identity, task_id: uuid.UUID) -> TurnTask:
+    task = queue.get(identity.tenant_id, task_id)
+    if task is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "no such turn")
+    return task
+
+
+@router.post("/api/turns", status_code=status.HTTP_202_ACCEPTED, response_model=TaskAccepted)
+def create_turn(body: TurnRequest, identity: CurrentIdentity) -> TaskAccepted:
+    """Accept the turn and queue it; a worker runs it. Poll the returned task."""
+    task_id = _enqueue(identity, body.message)
+    return TaskAccepted(task_id=task_id, status=TaskStatus.QUEUED)
+
+
+@router.get("/api/turns/{task_id}", response_model=TaskView)
+def read_turn(task_id: uuid.UUID, identity: CurrentIdentity) -> TaskView:
+    return TaskView.of(_task(identity, task_id))
 
 
 @router.get("/", response_class=HTMLResponse)
@@ -50,10 +60,14 @@ def chat_page(request: Request) -> Response:
 def chat_turn(
     request: Request, identity: CurrentIdentity, message: Annotated[str, Form(max_length=4000)]
 ) -> Response:
-    request_id, result = _run(identity, message)
-    return templates.TemplateResponse(
-        request, "_turn.html", {"message": message, "result": result, "request_id": request_id}
-    )
+    task = _task(identity, _enqueue(identity, message))
+    return templates.TemplateResponse(request, "_turn.html", {"task": task, "finished": FINISHED})
+
+
+@router.get("/chat/turns/{task_id}", response_class=HTMLResponse)
+def chat_turn_status(request: Request, task_id: uuid.UUID, identity: CurrentIdentity) -> Response:
+    task = _task(identity, task_id)
+    return templates.TemplateResponse(request, "_reply.html", {"task": task, "finished": FINISHED})
 
 
 @router.get("/login", response_class=HTMLResponse)
